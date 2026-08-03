@@ -172,6 +172,10 @@
   .sheet.open{display:flex}
   .sheet header{border-bottom:1px solid var(--line);padding-bottom:12px}
   .sheet h1{flex:1;font-size:16.5px;font-weight:700}
+  .xClose{
+    background:none;border:none;color:var(--muted);cursor:pointer;
+    font-size:17px;padding:4px 8px;font-family:inherit;flex-shrink:0;
+  }
   .sbody{
     flex:1;overflow-y:auto;padding:16px 18px calc(env(safe-area-inset-bottom) + 90px);
     -webkit-overflow-scrolling:touch;
@@ -238,6 +242,7 @@
   .slbl{display:flex;justify-content:space-between;font-size:12.5px;color:var(--muted);margin:10px 0 6px}
   .sheet input[type=range]{width:100%;accent-color:var(--accent)}
   #bannerCv{width:100%;height:auto;border-radius:12px;border:1px solid var(--line);display:block;margin-bottom:4px;background:var(--panel)}
+  #iconCv{width:132px;height:132px;border-radius:50%;border:1px solid var(--line);display:block;margin:0 auto 4px;background:var(--panel)}
   .uline{
     font-size:10.5px;color:#63636e;padding:0 4px;margin-top:-6px;
     word-break:break-all;
@@ -264,6 +269,7 @@
     text-shadow:0 1px 8px rgba(0,0,0,.55);
   }
   .lobbyEmpty{margin:auto;color:var(--muted);font-size:13.5px;text-align:center;line-height:2}
+  #lobbyCred{font-size:10.5px;color:#63636e;flex-shrink:0;text-align:right;line-height:1.4}
   #lobbyFoot{padding:12px 16px calc(env(safe-area-inset-bottom) + 14px)}
   #newRoomBtn{
     width:100%;background:var(--accent);border:none;border-radius:14px;
@@ -311,6 +317,7 @@
 <div id="lobby">
   <header>
     <div id="stageTitle" style="flex:1;font-size:16.5px;font-weight:700">ぶたい</div>
+    <span id="lobbyCred"></span>
   </header>
   <div id="lobbyList"></div>
   <div id="lobbyFoot"><button id="newRoomBtn">＋ あたらしい舞台</button></div>
@@ -346,7 +353,7 @@
 
 <!-- ---------- 楽屋 ---------- -->
 <div id="gakuya" class="sheet">
-  <header><h1>楽屋</h1></header>
+  <header><h1>楽屋</h1><button class="xClose closeSheet" data-sheet="gakuya" aria-label="とじる">✕</button></header>
   <div class="sbody">
 
     <div class="sec">
@@ -391,6 +398,17 @@
         <div id="iconPrev">🎭</div>
         <button class="btn quiet" id="iconBtn">アイコンをえらぶ</button>
         <input type="file" id="iconFile" accept="image/*" hidden>
+      </div>
+      <div class="field" id="iconEdit" style="display:none">
+        <label>アイコンのみせかた</label>
+        <canvas id="iconCv" width="256" height="256"></canvas>
+        <label class="slbl">大きさ <span id="iScaleV"></span></label>
+        <input type="range" id="iScale" min="100" max="300" value="100">
+        <label class="slbl">よこ</label>
+        <input type="range" id="iX" min="-100" max="100" value="0">
+        <label class="slbl">たて</label>
+        <input type="range" id="iY" min="-100" max="100" value="0">
+        <button class="btn" id="iconBake" style="margin-top:8px;width:100%">この見た目にする</button>
       </div>
       <div class="field">
         <label for="cName">名前</label>
@@ -438,7 +456,7 @@
 
 <!-- ---------- おもいで ---------- -->
 <div id="omoide" class="sheet">
-  <header><h1>おもいで</h1></header>
+  <header><h1>おもいで</h1><button class="xClose closeSheet" data-sheet="omoide" aria-label="とじる">✕</button></header>
   <div class="sbody">
 
     <div class="sec">
@@ -480,7 +498,7 @@
 
 <!-- ---------- せってい ---------- -->
 <div id="settei" class="sheet">
-  <header><h1>せってい</h1></header>
+  <header><h1>せってい</h1><button class="xClose closeSheet" data-sheet="settei" aria-label="とじる">✕</button></header>
   <div class="sbody">
 
     <div class="sec">
@@ -555,7 +573,7 @@
       <p class="hint" style="margin-top:6px">白紙は会話だけ消して設定は残すよ。とりこわしは、この舞台のすべて（設定・おもいで・トーク全部）が消えるから気をつけてね。</p>
     </div>
 
-    <div class="ver">ぶたい v0.5 ─ おもいでの棚と、みんなの合図。</div>
+    <div class="ver">ぶたい v0.6 ─ くらが建って、お財布が見えるよ。</div>
   </div>
   <div class="sfoot"><button class="closeSheet" data-sheet="settei">保存してとじる</button></div>
 </div>
@@ -565,6 +583,67 @@
 const $ = id => document.getElementById(id);
 
 /* ---------- たんす（保存） ---------- */
+/* ---------- くら（IndexedDB） ---------- */
+let _db = null;
+function kuraOpen(){
+  return new Promise((res, rej) => {
+    const q = indexedDB.open("butai", 1);
+    q.onupgradeneeded = () => q.result.createObjectStore("kv");
+    q.onsuccess = () => res(q.result);
+    q.onerror = () => rej(q.error);
+  });
+}
+async function kura(){ if(!_db) _db = await kuraOpen(); return _db; }
+async function kvGet(k){
+  try{
+    const d = await kura();
+    return await new Promise(res => {
+      const t = d.transaction("kv", "readonly").objectStore("kv").get(k);
+      t.onsuccess = () => res(t.result);
+      t.onerror = () => res(undefined);
+    });
+  }catch(e){ return undefined; }
+}
+async function kvSet(k, v){
+  try{
+    const d = await kura();
+    return await new Promise(res => {
+      const t = d.transaction("kv", "readwrite");
+      t.objectStore("kv").put(v, k);
+      t.oncomplete = () => res(true);
+      t.onerror = () => res(false);
+    });
+  }catch(e){ return false; }
+}
+async function kvDel(k){
+  try{
+    const d = await kura();
+    return await new Promise(res => {
+      const t = d.transaction("kv", "readwrite");
+      t.objectStore("kv").delete(k);
+      t.oncomplete = () => res(true);
+      t.onerror = () => res(false);
+    });
+  }catch(e){ return false; }
+}
+async function migrateChatsToKura(){
+  const keys = [];
+  for(let i = 0; i < localStorage.length; i++){
+    const k = localStorage.key(i);
+    if(k && k.indexOf("butai_chat_") === 0) keys.push(k);
+  }
+  for(const k of keys){
+    const id = k.slice("butai_chat_".length);
+    try{
+      const v = JSON.parse(localStorage.getItem(k));
+      if(Array.isArray(v)) await kvSet("chat_" + id, v);
+      localStorage.removeItem(k);
+    }catch(e){}
+  }
+  /* いちばん古い形（v0.3以前の butai_chat）も掃除 */
+  try{ localStorage.removeItem("butai_chat"); }catch(e){}
+}
+
 function loadK(k, fb){
   try{ const v = localStorage.getItem(k); return v ? JSON.parse(v) : fb; }
   catch(e){ return fb; }
@@ -613,7 +692,7 @@ let room = null;
 let STG = null, CHR = null, NAR = null, USR = null, CHAT = [];
 
 function saveRooms(){ saveK("butai_rooms", ROOMS); }
-function saveChat(){ if(CUR.threadId) saveK("butai_chat_" + CUR.threadId, CHAT); }
+function saveChat(){ if(CUR.threadId) kvSet("chat_" + CUR.threadId, CHAT); }
 function saveAll(){ saveK("butai_global", G); saveRooms(); saveChat(); saveK("butai_cur", CUR); }
 
 /* ---------- 舞台の描画 ---------- */
@@ -989,6 +1068,28 @@ function parseScript(text){
   return out.length ? out : null;
 }
 
+async function fetchGenUsage(genId, model){
+  for(let i = 0; i < 2; i++){
+    await sleepMs(i === 0 ? 700 : 1200);
+    try{
+      const res = await fetch("https://openrouter.ai/api/v1/generation?id=" + encodeURIComponent(genId), {
+        headers: { "Authorization": "Bearer " + G.orKey.trim() }
+      });
+      if(!res.ok) continue;
+      const j = await res.json();
+      const d = j && j.data;
+      if(!d) continue;
+      return {
+        m: model,
+        p: d.tokens_prompt || d.native_tokens_prompt || 0,
+        c: d.tokens_completion || d.native_tokens_completion || 0,
+        cost: (typeof d.total_cost === "number") ? d.total_cost : null
+      };
+    }catch(e){}
+  }
+  return null;
+}
+const sleepMs = ms => new Promise(r => setTimeout(r, ms));
 function usageOf(usage, model){
   if(!usage) return null;
   return {
@@ -1040,7 +1141,7 @@ async function callRoleStream(role, messages, onUpdate){
   }
   const reader = res.body.getReader();
   const dec = new TextDecoder();
-  let raw = "", text = "", think = "", enough = false, lastUsage = null;
+  let raw = "", text = "", think = "", enough = false, lastUsage = null, genId = null;
   try{
     let carry = "";
     while(true){
@@ -1057,6 +1158,7 @@ async function callRoleStream(role, messages, onUpdate){
         let j;
         try{ j = JSON.parse(payload); }catch(e){ continue; }
         if(j.usage) lastUsage = j.usage;
+        if(j.id) genId = j.id;
         const d = (j.choices && j.choices[0] && j.choices[0].delta) || {};
         if(d.reasoning) think += d.reasoning;
         if(d.content){
@@ -1076,7 +1178,11 @@ async function callRoleStream(role, messages, onUpdate){
   raw = text;
   const tk = raw.match(/<think>([\s\S]*?)<\/think>/);
   if(tk) think = (think ? think + "\n" : "") + tk[1].trim();
-  return { text: stripThinkLive(raw).trim(), think: think.trim(), u: usageOf(lastUsage, R.model) };
+  let u = usageOf(lastUsage, R.model);
+  if(!u && R.prov === "or" && genId){
+    u = await fetchGenUsage(genId, R.model); /* 途中で筆を置かせた時は、あとからレシートを取りに行く */
+  }
+  return { text: stripThinkLive(raw).trim(), think: think.trim(), u: u };
 }
 /* 途中まででも読める台本パーサ（刻みは残す・整えは最後に） */
 function parseScriptLive(text){
@@ -1325,7 +1431,28 @@ async function retake(){
 }
 
 /* ---------- ロビーと部屋の行き来 ---------- */
+let _credAt = 0;
+async function refreshCredits(){
+  const el = $("lobbyCred");
+  if(!G.orKey.trim()){ el.textContent = ""; return; }
+  if(Date.now() - _credAt < 60000) return;
+  _credAt = Date.now();
+  try{
+    const res = await fetch("https://openrouter.ai/api/v1/credits", {
+      headers: { "Authorization": "Bearer " + G.orKey.trim() }
+    });
+    if(!res.ok) return;
+    const j = await res.json();
+    const d = j && j.data;
+    if(!d) return;
+    const used = (+d.total_usage || 0).toFixed(2);
+    const total = (+d.total_credits || 0).toFixed(2);
+    el.textContent = "つかった $" + used + "\nのこり $" + Math.max(0, total - used).toFixed(2);
+    el.style.whiteSpace = "pre";
+  }catch(e){}
+}
 function renderLobby(){
+  refreshCredits();
   const L = $("lobbyList");
   L.innerHTML = "";
   if(!ROOMS.length){
@@ -1353,7 +1480,7 @@ function renderLobby(){
     L.appendChild(b);
   }
 }
-function enterRoom(roomId, threadId){
+async function enterRoom(roomId, threadId){
   const r = ROOMS.find(x => x.id === roomId);
   if(!r) { renderLobby(); return; }
   room = r;
@@ -1362,7 +1489,7 @@ function enterRoom(roomId, threadId){
   CUR = { roomId: room.id, threadId: th.id };
   saveK("butai_cur", CUR);
   STG = room.stage; CHR = room.char; NAR = room.nar; USR = room.user;
-  CHAT = loadK("butai_chat_" + th.id, []);
+  CHAT = (await kvGet("chat_" + th.id)) || [];
   $("lobby").classList.add("off");
   $("app").classList.add("on");
   $("roomTitle").textContent = STG.title || "（無題の舞台）";
@@ -1516,6 +1643,7 @@ function openGakuya(){
   bp.style.backgroundImage = room.banner ? "url(" + room.banner + ")" : "";
   bp.textContent = room.banner ? "" : "🖼";
   $("bannerEdit").style.display = "none";
+  $("iconEdit").style.display = "none";
   const p = $("iconPrev");
   p.style.backgroundImage = CHR.icon ? "url(" + CHR.icon + ")" : "";
   p.textContent = CHR.icon ? "" : "🎭";
@@ -1623,25 +1751,45 @@ function renderTana(){
     L.appendChild(d);
   });
 }
+let iconImg = null;
 function pickIcon(file){
   const rd = new FileReader();
   rd.onload = () => {
     const img = new Image();
     img.onload = () => {
-      const s = Math.min(img.width, img.height);
-      const cv = document.createElement("canvas");
-      cv.width = cv.height = 128;
-      const cx = cv.getContext("2d");
-      cx.drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s, 0, 0, 128, 128);
-      CHR.icon = cv.toDataURL("image/jpeg", 0.82);
-      const p = $("iconPrev");
-      p.style.backgroundImage = "url(" + CHR.icon + ")";
-      p.textContent = "";
-      saveK("butai_char", CHR);
+      iconImg = img;
+      $("iconEdit").style.display = "";
+      $("iScale").value = 100; $("iX").value = 0; $("iY").value = 0;
+      paintIcon();
     };
     img.src = rd.result;
   };
   rd.readAsDataURL(file);
+}
+function paintIcon(){
+  if(!iconImg) return;
+  const cv = $("iconCv"), W = cv.width, H = cv.height;
+  const ctx = cv.getContext("2d");
+  ctx.fillStyle = "#1c1c21"; ctx.fillRect(0, 0, W, H);
+  const us = parseInt($("iScale").value, 10) / 100;
+  $("iScaleV").textContent = "×" + us.toFixed(1);
+  const s = Math.max(W / iconImg.width, H / iconImg.height) * us;
+  const iw = iconImg.width * s, ih = iconImg.height * s;
+  const ox = parseInt($("iX").value, 10) / 100, oy = parseInt($("iY").value, 10) / 100;
+  const cx = (W - iw) * 0.5 + ox * Math.max(0, (iw - W) * 0.5 + 24);
+  const cy = (H - ih) * 0.5 + oy * Math.max(0, (ih - H) * 0.5 + 24);
+  ctx.drawImage(iconImg, cx, cy, iw, ih);
+}
+function bakeIcon(){
+  if(!iconImg) return;
+  paintIcon();
+  CHR.icon = $("iconCv").toDataURL("image/jpeg", 0.85);
+  const p = $("iconPrev");
+  p.style.backgroundImage = "url(" + CHR.icon + ")";
+  p.textContent = "";
+  saveRooms();
+  $("iconEdit").style.display = "none";
+  iconImg = null;
 }
 let bannerImg = null;
 function pickBanner(file){
@@ -1685,13 +1833,13 @@ function bakeBanner(){
 }
 
 /* ---------- お守り ---------- */
-function exportOmamori(){
+async function exportOmamori(){
   collectOpenSheets();
   saveAll();
   saveChat();
   const chats = {};
   for(const r of ROOMS) for(const t of r.threads){
-    chats[t.id] = (t.id === CUR.threadId) ? CHAT : loadK("butai_chat_" + t.id, []);
+    chats[t.id] = (t.id === CUR.threadId) ? CHAT : ((await kvGet("chat_" + t.id)) || []);
   }
   const pack = { app: "butai", version: 2, ts: Date.now(),
     global: G, rooms: ROOMS, cur: CUR, chats: chats };
@@ -1725,7 +1873,7 @@ function exportLog(){
 }
 function importOmamori(file){
   const rd = new FileReader();
-  rd.onload = () => {
+  rd.onload = async () => {
     try{
       const pack = JSON.parse(rd.result);
       if(pack.app !== "butai") throw new Error("これは「ぶたい」のお守りじゃないみたい。");
@@ -1735,7 +1883,7 @@ function importOmamori(file){
         ROOMS = pack.rooms.map(r => Object.assign(newRoomObj(), r));
         const chats = pack.chats || {};
         for(const r of ROOMS) for(const t of r.threads){
-          saveK("butai_chat_" + t.id, Array.isArray(chats[t.id]) ? chats[t.id] : []);
+          await kvSet("chat_" + t.id, Array.isArray(chats[t.id]) ? chats[t.id] : []);
         }
         CUR = pack.cur || {};
       }else{
@@ -1745,7 +1893,7 @@ function importOmamori(file){
         r.char = Object.assign(r.char, pack.char || {});
         r.nar = Object.assign(r.nar, pack.nar || {});
         r.user = Object.assign(r.user, pack.user || {});
-        saveK("butai_chat_" + r.threads[0].id, Array.isArray(pack.chat) ? pack.chat : []);
+        await kvSet("chat_" + r.threads[0].id, Array.isArray(pack.chat) ? pack.chat : []);
         ROOMS = [r];
         CUR = { roomId: r.id, threadId: r.threads[0].id };
       }
@@ -1882,7 +2030,7 @@ $("delThreadBtn").onclick = () => {
   if(room.threads.length <= 1){ alert("最後のひとつは消せないの。「白紙にもどす」を使ってね。"); return; }
   const th = room.threads.find(t => t.id === CUR.threadId);
   if(!confirm("「" + (th ? th.title : "このトーク") + "」をけす？もどせないよ。")) return;
-  try{ localStorage.removeItem("butai_chat_" + CUR.threadId); }catch(e){}
+  kvDel("chat_" + CUR.threadId);
   room.threads = room.threads.filter(t => t.id !== CUR.threadId);
   saveRooms();
   $("settei").classList.remove("open");
@@ -1890,7 +2038,7 @@ $("delThreadBtn").onclick = () => {
 };
 $("delRoomBtn").onclick = () => {
   if(!confirm("この舞台をとりこわす？設定もトークも、ぜんぶ消えてもどせないよ。")) return;
-  for(const t of room.threads){ try{ localStorage.removeItem("butai_chat_" + t.id); }catch(e){} }
+  for(const t of room.threads){ kvDel("chat_" + t.id); }
   ROOMS = ROOMS.filter(r => r.id !== room.id);
   CUR = {};
   saveK("butai_rooms", ROOMS); saveK("butai_cur", CUR);
@@ -1924,12 +2072,15 @@ $("field").addEventListener("input", function(){
 });
 
 /* 幕開け */
-applyType();
-if(CUR.roomId && ROOMS.find(r => r.id === CUR.roomId)){
-  enterRoom(CUR.roomId, CUR.threadId);
-}else{
-  renderLobby();
-}
+(async function boot(){
+  applyType();
+  await migrateChatsToKura();
+  if(CUR.roomId && ROOMS.find(r => r.id === CUR.roomId)){
+    await enterRoom(CUR.roomId, CUR.threadId);
+  }else{
+    renderLobby();
+  }
+})();
 </script>
 </body>
 </html>
