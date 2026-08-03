@@ -216,6 +216,18 @@
     font-family:inherit;
   }
   .ver{color:#5c5c66;font-size:11px;text-align:center;margin-top:6px}
+  .mlist{
+    margin-top:8px;max-height:220px;overflow-y:auto;
+    border:1px solid var(--line);border-radius:12px;
+    background:var(--panel);display:none;
+  }
+  .mlist.show{display:block}
+  .mitem{
+    padding:9px 12px;font-size:13px;cursor:pointer;
+    border-bottom:1px solid var(--line);line-height:1.5;
+  }
+  .mitem:last-child{border-bottom:none}
+  .mitem .mid{display:block;color:var(--muted);font-size:11px;word-break:break-all}
 </style>
 </head>
 <body>
@@ -263,6 +275,14 @@
         <label for="sOpening">最初の場面（幕開けの地の文）</label>
         <textarea id="sOpening" placeholder="空欄なら語り手が自分で幕を開けるよ。書いておくと、この文がそのまま最初の地の文になるの。"></textarea>
       </div>
+      <div class="field">
+        <label for="sTroupe">座組み</label>
+        <select id="sTroupe">
+          <option value="duo">ふたり体制（語り手とキャラ、別のモデルで一回ずつ）</option>
+          <option value="solo">ひとり座長（1回の呼び出しで二役・zeta同型）</option>
+        </select>
+        <p class="hint">ひとり座長は、キャラ欄のモデルが語り手とキャラの二役を演じるよ。呼び出しが1回で済んで、地の文と台詞が短く交互に進むの。語り手欄のプロンプトは、二役のうちの語り手の役作りとしてちゃんと渡るよ。</p>
+      </div>
     </div>
 
     <div class="sec">
@@ -282,8 +302,9 @@
       </div>
       <div class="field duo">
         <select id="cProv"></select>
-        <input type="text" id="cModel" placeholder="モデルID">
+        <input type="text" id="cModel" placeholder="モデル（入力でけんさく）" autocomplete="off">
       </div>
+      <div class="mlist" id="cList"></div>
     </div>
 
     <div class="sec">
@@ -294,8 +315,9 @@
       </div>
       <div class="field duo">
         <select id="nProv"></select>
-        <input type="text" id="nModel" placeholder="モデルID">
+        <input type="text" id="nModel" placeholder="モデル（入力でけんさく）" autocomplete="off">
       </div>
+      <div class="mlist" id="nList"></div>
     </div>
 
     <div class="sec">
@@ -346,7 +368,7 @@
       <p class="hint" style="margin-top:6px">舞台やキャラの設定はそのまま、会話だけを消すよ。</p>
     </div>
 
-    <div class="ver">ぶたい v0.1 ─ 幕が上がったよ。</div>
+    <div class="ver">ぶたい v0.2 ─ 座組みが選べるようになったよ。</div>
   </div>
   <div id="gfoot">
     <button id="closeGakuya">保存してとじる</button>
@@ -365,7 +387,7 @@ function loadK(k, fb){
 function saveK(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
 
 let G    = Object.assign({ orKey:"", locals:[{name:"",url:""},{name:"",url:""}] }, loadK("butai_global", {}));
-let STG  = Object.assign({ title:"", world:"", direction:"", opening:"" }, loadK("butai_stage", {}));
+let STG  = Object.assign({ title:"", world:"", direction:"", opening:"", troupe:"duo" }, loadK("butai_stage", {}));
 let CHR  = Object.assign({ name:"", prompt:"", icon:"", prov:"or", model:"" }, loadK("butai_char", {}));
 let NAR  = Object.assign({ prompt:"", prov:"or", model:"" }, loadK("butai_nar", {}));
 let USR  = Object.assign({ name:"", info:"" }, loadK("butai_user", {}));
@@ -552,17 +574,15 @@ function showError(msg){
   scrollBottom();
 }
 
-/* 新しく届いた枠を、ひと枠ずつふわっと出す */
-function revealNew(items){
-  let i = 0;
-  for(const m of items){
-    const el = chatEl.querySelector('[data-id="' + m.id + '"]');
-    if(el){
-      el.style.animationDelay = (i * 0.45) + "s";
-      el.classList.add("in");
-      i++;
-    }
-  }
+/* 新しく届いた枠を、ほんとうにひと枠ずつ出す（時間差はJSで刻む） */
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+function appendLive(m){
+  const w = chatEl.querySelector(".welcome");
+  if(w) w.remove();
+  const el = buildMsg(m);
+  el.classList.add("in");
+  chatEl.appendChild(el);
+  scrollBottom();
 }
 
 /* ---------- ことばの組み立て ---------- */
@@ -592,9 +612,10 @@ function buildNarMessages(){
   sys += "\n# " + un + "（この物語の相手役）\n" + (USR.info || "（情報なし）") + "\n";
   sys += "\n# あなたの書き方\n";
   sys += "- 地の文だけを書く。かぎ括弧の台詞は書かない（登場人物の声は本人が発する）。\n";
-  sys += "- 1〜3段落。段落のあいだは空行。ひとつの段落は短く。\n";
+  sys += "- 1〜2段落。段落のあいだは空行。ひとつの段落は3文まで、短く。\n";
   sys += "- 場面を一歩だけ進める。先回りして結末まで書かない。\n";
   sys += "- " + cn + "の内心は断定しない（所作・気配・情景として描く）。\n";
+  sys += "- " + un + "の台詞は書かない。" + un + "の行動や内心を勝手に決めない（本人が書いたことだけを手がかりに、そのまわりで起きることを描く）。\n";
   sys += "- 前置きや説明はなしで、地の文そのものだけを出力する。\n";
   const user = (CHAT.length ? "ここまでの舞台:\n\n" + transcriptText() + "\n\n---\n" : "") +
     "続きの地の文を書いてください。";
@@ -609,6 +630,7 @@ function buildCharMessages(){
   sys += "\n# この場の約束\n";
   sys += "- （ ）で囲まれた文は、いまその場で起きている情景や出来事です。あなたは実際にそれを見聞きした人物として、自然に受け止めて振る舞ってください。描写の文そのものに言及したり、誰が書いたのかを気にしたりしないでください。\n";
   sys += "- あなたの返事には、台詞と、あなた自身の所作や表情を自由に織り交ぜて構いません。\n";
+  sys += "- " + un + "の台詞や行動を、あなたが決めて書かないでください。" + un + "のことは本人だけが決めます。\n";
   sys += "- あなたは" + cn + "として、いまこの場にいます。役から出ないでください。\n";
   const msgs = [{ role: "system", content: sys }];
   let buf = [];
@@ -625,11 +647,16 @@ function buildCharMessages(){
 }
 
 /* ---------- 呼びかけ（API） ---------- */
+function localBase(prov){
+  const h = G.locals[prov === "l1" ? 0 : 1] || { name: "", url: "" };
+  const url = (h.url || "").trim().replace(/\/+$/, "").replace(/\/v1$/, "");
+  return { name: (h.name || "").trim() || (prov === "l1" ? "1軒目" : "2軒目"), url: url };
+}
 function endpointOf(prov){
   if(prov === "l1" || prov === "l2"){
-    const h = G.locals[prov === "l1" ? 0 : 1];
-    if(!h || !h.url.trim()) throw new Error((h && h.name ? h.name : "ローカルの住まい") + "のアドレスが空だよ。楽屋の🔌で書いてね。");
-    return { url: h.url.trim().replace(/\/+$/, "") + "/v1/chat/completions", key: "" };
+    const h = localBase(prov);
+    if(!h.url) throw new Error(h.name + "のアドレスが空だよ。楽屋の🔌で書いてね。");
+    return { url: h.url + "/v1/chat/completions", key: "" };
   }
   if(!G.orKey.trim()) throw new Error("OpenRouterのAPIキーが空だよ。楽屋の🔌で書いてね。");
   return { url: "https://openrouter.ai/api/v1/chat/completions", key: G.orKey.trim() };
@@ -672,6 +699,46 @@ async function callRole(role, messages){
   return { text: text.trim(), think: think.trim() };
 }
 
+/* ---------- ひとり座長（1API二役） ---------- */
+function buildSoloMessages(){
+  const cn = CHR.name || "キャラ";
+  const un = USR.name || "ユーザー";
+  let sys = "あなたはこの舞台の座長です。ひとりで「語り手」と「" + cn + "」の二役を演じ、台本の形式で物語を進めます。\n";
+  sys += "\n# 語り手の役作り\n" + (NAR.prompt.trim() || "静かで的確な筆致。") + "\n";
+  sys += "\n# " + cn + "の役作り\n" + (CHR.prompt || "（設定なし）") + "\n";
+  sys += "\n# 舞台\n" + (stageLines() || "（自由な舞台）");
+  if(STG.direction) sys += "\n# 進行のしかた\n" + STG.direction + "\n";
+  sys += "\n# " + un + "（この物語の相手役・実在の相手）\n" + (USR.info || "（情報なし）") + "\n";
+  sys += "\n# 台本の書式（かならず守る）\n";
+  sys += "- 地の文の行は「≡ 」で始める。" + cn + "の番の行は「＠ 」で始める。\n";
+  sys += "- 「≡」→「＠」→「≡」→「＠」と短く交互に。1回の出力は1〜2往復まで。\n";
+  sys += "- 「≡」は1段落・3文まで。台詞は書かない。" + cn + "の内心は断定せず、所作・気配・情景として描く。\n";
+  sys += "- 「＠」は" + cn + "のひとこと〜数文。台詞と、" + cn + "自身の短い所作を自由に。\n";
+  sys += "- " + un + "の台詞・行動・内心は書かない。" + un + "のことは本人だけが決める。\n";
+  sys += "- マーカーで始まる行のほかは、何も出力しない（前置き・説明・記号の囲みは禁止）。\n";
+  const user = (CHAT.length ? "ここまでの舞台:\n\n" + transcriptText() + "\n\n---\n" : "") +
+    "台本の続きを書いてください。";
+  return [{ role: "system", content: sys }, { role: "user", content: user }];
+}
+function parseScript(text){
+  const lines = String(text || "").split("\n");
+  const blocks = [];
+  let cur = null;
+  for(const raw of lines){
+    const line = raw.replace(/\s+$/, "");
+    const m = line.match(/^\s*([≡＠@])\s*(.*)$/);
+    if(m){
+      cur = { t: m[1] === "≡" ? "nar" : "char", x: m[2] };
+      blocks.push(cur);
+    }else if(cur){
+      cur.x += (cur.x ? "\n" : "") + line.trim();
+    }
+    /* マーカー前の前置きは捨てる */
+  }
+  const out = blocks.map(b => ({ t: b.t, x: b.x.trim() })).filter(b => b.x);
+  return out.length ? out : null;
+}
+
 /* ---------- 進行 ---------- */
 function splitParas(text){
   return String(text || "").split(/\n\s*\n/).map(s => s.trim()).filter(Boolean);
@@ -699,34 +766,65 @@ function updateRetake(){
 }
 
 async function runGeneration(turn){
-  const newOnes = [];
   try{
     const hasScene = CHAT.some(m => m.t !== "user");
     if(!hasScene && STG.opening.trim()){
       /* 幕開けは、書いてもらった最初の場面をそのまま */
       for(const p of splitParas(STG.opening)){
         const m = { id: uid(), t: "nar", x: p, turn: turn, ts: Date.now() };
-        CHAT.push(m); newOnes.push(m);
+        CHAT.push(m);
+        appendLive(m);
+        await sleep(560);
       }
-      saveChat(); renderChat(); revealNew(newOnes);
-    }else{
+      saveChat();
+    }
+    if(STG.troupe === "solo"){
+      /* ひとり座長: キャラ欄のモデルが二役 */
+      showWait("nar");
+      const s = await callRole("char", buildSoloMessages());
+      hideWait();
+      const blocks = parseScript(s.text);
+      if(!blocks){
+        /* 書式が守られなかった時は、まるごとキャラの言葉として受け取る */
+        const cm = { id: uid(), t: "char", x: cleanCharText(s.text) || "……", turn: turn, ts: Date.now(), think: s.think || "" };
+        CHAT.push(cm); saveChat(); appendLive(cm);
+        return;
+      }
+      for(let i = 0; i < blocks.length; i++){
+        const b = blocks[i];
+        const m = { id: uid(), t: b.t, x: b.t === "char" ? cleanCharText(b.x) : b.x,
+                    turn: turn, ts: Date.now(), think: i === 0 ? (s.think || "") : "" };
+        CHAT.push(m);
+        appendLive(m);
+        if(i < blocks.length - 1) await sleep(560);
+      }
+      saveChat();
+      return;
+    }
+    /* ふたり体制 */
+    let paras = null, narThink = "";
+    if(hasScene || !STG.opening.trim()){
       showWait("nar");
       const nar = await callRole("nar", buildNarMessages());
       hideWait();
-      const paras = splitParas(nar.text);
+      paras = splitParas(nar.text);
+      narThink = nar.think || "";
       if(!paras.length) throw new Error("語り手が言葉を失ってしまった…リテイクしてみてね。");
-      for(const p of paras){
-        const m = { id: uid(), t: "nar", x: p, turn: turn, ts: Date.now(), think: nar.think || "" };
-        CHAT.push(m); newOnes.push(m);
+      for(let i = 0; i < paras.length; i++){
+        const m = { id: uid(), t: "nar", x: paras[i], turn: turn, ts: Date.now(), think: i === 0 ? narThink : "" };
+        CHAT.push(m);
+        appendLive(m);
+        await sleep(560);
       }
-      saveChat(); renderChat(); revealNew(newOnes);
+      saveChat();
     }
     showWait("char");
     const c = await callRole("char", buildCharMessages());
     hideWait();
     const cm = { id: uid(), t: "char", x: cleanCharText(c.text) || "……", turn: turn, ts: Date.now(), think: c.think || "" };
-    CHAT.push(cm); newOnes.push(cm);
-    saveChat(); renderChat(); revealNew([cm]);
+    CHAT.push(cm);
+    saveChat();
+    appendLive(cm);
   }catch(e){
     saveChat();
     showError(e && e.message ? e.message : "つまずいてしまった…もう一度試してみてね。");
@@ -779,6 +877,7 @@ function provOptions(sel, val){
 function openGakuya(){
   $("sTitle").value = STG.title; $("sWorld").value = STG.world;
   $("sDirection").value = STG.direction; $("sOpening").value = STG.opening;
+  $("sTroupe").value = STG.troupe || "duo";
   $("cName").value = CHR.name; $("cPrompt").value = CHR.prompt; $("cModel").value = CHR.model;
   $("nPrompt").value = NAR.prompt; $("nModel").value = NAR.model;
   $("uName").value = USR.name; $("uInfo").value = USR.info;
@@ -794,6 +893,7 @@ function openGakuya(){
 function closeGakuya(){
   STG.title = $("sTitle").value.trim(); STG.world = $("sWorld").value;
   STG.direction = $("sDirection").value; STG.opening = $("sOpening").value;
+  STG.troupe = $("sTroupe").value;
   CHR.name = $("cName").value.trim(); CHR.prompt = $("cPrompt").value;
   CHR.prov = $("cProv").value; CHR.model = $("cModel").value.trim();
   NAR.prompt = $("nPrompt").value; NAR.prov = $("nProv").value; NAR.model = $("nModel").value.trim();
@@ -845,6 +945,7 @@ function closeGakuyaValuesOnly(){
   if($("gakuya").classList.contains("open")){
     STG.title = $("sTitle").value.trim(); STG.world = $("sWorld").value;
     STG.direction = $("sDirection").value; STG.opening = $("sOpening").value;
+  STG.troupe = $("sTroupe").value;
     CHR.name = $("cName").value.trim(); CHR.prompt = $("cPrompt").value;
     CHR.prov = $("cProv").value; CHR.model = $("cModel").value.trim();
     NAR.prompt = $("nPrompt").value; NAR.prov = $("nProv").value; NAR.model = $("nModel").value.trim();
@@ -878,6 +979,77 @@ function importOmamori(file){
   };
   rd.readAsText(file);
 }
+
+/* ---------- モデルけんさく ---------- */
+let orModels = null;
+const localModels = {}; /* url → [{id}] */
+async function modelsFor(prov){
+  if(prov === "or"){
+    if(orModels) return orModels;
+    const res = await fetch("https://openrouter.ai/api/v1/models");
+    if(!res.ok) throw new Error("一覧が取れなかった");
+    const j = await res.json();
+    orModels = (j.data || []).map(m => ({ id: m.id, name: m.name || m.id }));
+    return orModels;
+  }
+  const h = localBase(prov);
+  if(!h.url) throw new Error(h.name + "のアドレスが空だよ。🔌欄に書いてね。");
+  if(localModels[h.url]) return localModels[h.url];
+  const res = await fetch(h.url + "/v1/models");
+  if(!res.ok) throw new Error(h.name + "には届いたけど断られちゃった（" + res.status + "）");
+  const j = await res.json();
+  localModels[h.url] = (j.data || []).map(m => ({ id: m.id, name: m.id }));
+  return localModels[h.url];
+}
+function attachModelSearch(inputId, listId, provId){
+  const input = $(inputId), list = $(listId), provSel = $(provId);
+  let seq = 0;
+  input.addEventListener("input", async () => {
+    const q = input.value.trim().toLowerCase();
+    if(!q){ list.classList.remove("show"); list.innerHTML = ""; return; }
+    const my = ++seq;
+    let models;
+    try{ models = await modelsFor(provSel.value); }
+    catch(e){
+      if(my !== seq) return;
+      list.innerHTML = "";
+      const d = document.createElement("div");
+      d.className = "mitem";
+      d.textContent = (e && e.message ? e.message : "一覧が取れなかった") + "。IDを直接入力してもOK。";
+      list.appendChild(d); list.classList.add("show");
+      return;
+    }
+    if(my !== seq) return;
+    const hits = models.filter(m =>
+      m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q)
+    ).slice(0, 40);
+    list.innerHTML = "";
+    if(!hits.length){
+      const d = document.createElement("div");
+      d.className = "mitem";
+      d.textContent = "見つからなかったよ。IDを直接入力してもOK。";
+      list.appendChild(d);
+    }else{
+      for(const m of hits){
+        const item = document.createElement("div");
+        item.className = "mitem";
+        item.textContent = m.name;
+        const sub = document.createElement("span");
+        sub.className = "mid"; sub.textContent = m.id;
+        item.appendChild(sub);
+        item.onclick = () => {
+          input.value = m.id;
+          list.classList.remove("show"); list.innerHTML = "";
+        };
+        list.appendChild(item);
+      }
+    }
+    list.classList.add("show");
+  });
+  provSel.addEventListener("change", () => { list.classList.remove("show"); list.innerHTML = ""; });
+}
+attachModelSearch("cModel", "cList", "cProv");
+attachModelSearch("nModel", "nList", "nProv");
 
 /* ---------- 小さな配線 ---------- */
 $("sendBtn").onclick = susumu;
