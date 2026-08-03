@@ -29,7 +29,8 @@
     font-size:15px;line-height:1.75;
     overscroll-behavior:none;
   }
-  #app{height:100dvh;display:flex;flex-direction:column}
+  #app{height:100dvh;display:none;flex-direction:column}
+  #app.on{display:flex}
 
   /* ---------- 幕の上（ヘッダー） ---------- */
   header{
@@ -216,6 +217,56 @@
     font-family:inherit;
   }
   .ver{color:#5c5c66;font-size:11px;text-align:center;margin-top:6px}
+  /* ---------- ロビー ---------- */
+  #lobby{height:100dvh;display:flex;flex-direction:column}
+  #lobby.off{display:none}
+  #lobbyList{flex:1;overflow-y:auto;padding:6px 16px 16px;display:flex;flex-direction:column;gap:12px;-webkit-overflow-scrolling:touch}
+  .banner{
+    position:relative;height:78px;border-radius:16px;background:var(--panel);
+    overflow:hidden;display:flex;align-items:center;padding:0 16px;cursor:pointer;
+    flex-shrink:0;
+  }
+  .banner .bimg{
+    position:absolute;top:0;right:0;bottom:0;width:64%;
+    background:center/cover no-repeat;
+    -webkit-mask-image:linear-gradient(to left,#000 45%,transparent 100%);
+    mask-image:linear-gradient(to left,#000 45%,transparent 100%);
+  }
+  .banner .btitle{
+    position:relative;z-index:1;font-weight:700;font-size:15.5px;
+    max-width:72%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    text-shadow:0 1px 8px rgba(0,0,0,.55);
+  }
+  .lobbyEmpty{margin:auto;color:var(--muted);font-size:13.5px;text-align:center;line-height:2}
+  #lobbyFoot{padding:12px 16px calc(env(safe-area-inset-bottom) + 14px)}
+  #newRoomBtn{
+    width:100%;background:var(--accent);border:none;border-radius:14px;
+    color:#fff;font-size:15px;font-weight:600;padding:13px;cursor:pointer;font-family:inherit;
+  }
+  #backBtn{
+    background:none;border:none;color:var(--text);cursor:pointer;
+    font-size:24px;line-height:1;padding:2px 8px 4px 0;flex-shrink:0;font-family:inherit;
+  }
+  /* ---------- トークの札 ---------- */
+  #threads{display:flex;gap:8px;overflow-x:auto;padding:0 16px 8px;flex-shrink:0;-webkit-overflow-scrolling:touch}
+  .tpill{
+    flex-shrink:0;border:1px solid var(--line);border-radius:999px;
+    padding:5px 14px;font-size:12.5px;color:var(--muted);cursor:pointer;
+    background:none;font-family:inherit;white-space:nowrap;
+  }
+  .tpill.on{color:var(--text);border-color:var(--accent);background:color-mix(in srgb,var(--accent) 20%,transparent)}
+  /* ---------- フラグ帳 ---------- */
+  #flagList{margin-top:10px}
+  .flagItem{display:flex;gap:10px;align-items:center;padding:9px 2px;border-bottom:1px solid var(--line);font-size:14px}
+  .flagItem .fx{flex:1;cursor:pointer;line-height:1.6}
+  .flagItem.done .fx{color:var(--muted);text-decoration:line-through}
+  .flagItem .fdel{background:none;border:none;color:var(--muted);cursor:pointer;font-size:15px;padding:2px 6px}
+  #bannerPrev{
+    width:104px;height:56px;border-radius:12px;flex-shrink:0;
+    background:var(--panel2) center/cover no-repeat;
+    display:flex;align-items:center;justify-content:center;font-size:20px;
+    border:1px dashed var(--line);cursor:pointer;overflow:hidden;
+  }
   .mlist{
     margin-top:8px;max-height:220px;overflow-y:auto;
     border:1px solid var(--line);border-radius:12px;
@@ -231,13 +282,23 @@
 </style>
 </head>
 <body>
+<div id="lobby">
+  <header>
+    <div id="stageTitle" style="flex:1;font-size:16.5px;font-weight:700">ぶたい</div>
+  </header>
+  <div id="lobbyList"></div>
+  <div id="lobbyFoot"><button id="newRoomBtn">＋ あたらしい舞台</button></div>
+</div>
+
 <div id="app">
   <header>
-    <div id="stageTitle">ぶたい</div>
+    <button id="backBtn" aria-label="ロビーへもどる">‹</button>
+    <div id="roomTitle" style="flex:1;font-size:16.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">ぶたい</div>
     <button id="menuBtn" aria-label="楽屋をひらく">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
     </button>
   </header>
+  <div id="threads"></div>
 
   <div id="chat"></div>
   <div id="retakeRow"><button id="retakeBtn">↻ リテイク</button></div>
@@ -262,6 +323,11 @@
       <div class="field">
         <label for="sTitle">タイトル</label>
         <input type="text" id="sTitle" placeholder="例：『ようこそ、プレイヤー様。』">
+      </div>
+      <div class="field iconRow">
+        <div id="bannerPrev">🖼</div>
+        <button class="btn quiet" id="bannerBtn">イメージ画像をえらぶ</button>
+        <input type="file" id="bannerFile" accept="image/*" hidden>
       </div>
       <div class="field">
         <label for="sWorld">世界観</label>
@@ -341,6 +407,23 @@
     </div>
 
     <div class="sec">
+      <h2>📔 おぼえ帳</h2>
+      <div class="field">
+        <textarea id="rMemo" placeholder="この舞台でこれまでにあった大事なこと。座長と語り手が毎回読むよ。キャラには「覚えていること」として伝わるの。"></textarea>
+      </div>
+    </div>
+
+    <div class="sec">
+      <h2>🚩 フラグ帳</h2>
+      <div class="duo">
+        <input type="text" id="flagNew" placeholder="これから起きてほしいこと">
+        <button class="btn" id="flagAdd" style="flex:0 0 auto">たてる</button>
+      </div>
+      <div id="flagList"></div>
+      <p class="hint">立てたフラグは座長と語り手に渡って、物語の中で実際に起きたら自動で済みになるよ（トーク内には何も出ない）。タップで手動でも切り替えられるの。</p>
+    </div>
+
+    <div class="sec">
       <h2>🔌 つなぐ</h2>
       <div class="field">
         <label for="orKey">OpenRouter APIキー</label>
@@ -372,11 +455,15 @@
 
     <div class="sec">
       <h2>🧹 そのほか</h2>
-      <button class="btn warn" id="clearBtn">トークを白紙にもどす</button>
-      <p class="hint" style="margin-top:6px">舞台やキャラの設定はそのまま、会話だけを消すよ。</p>
+      <div class="duo">
+        <button class="btn warn" id="clearBtn">このトークを白紙に</button>
+        <button class="btn warn" id="delThreadBtn">このトークをけす</button>
+      </div>
+      <button class="btn warn" id="delRoomBtn" style="margin-top:10px;width:100%">この舞台をとりこわす</button>
+      <p class="hint" style="margin-top:6px">白紙は会話だけ消して設定は残すよ。とりこわしは、この舞台のすべて（設定・トーク全部）が消えるから気をつけてね。</p>
     </div>
 
-    <div class="ver">ぶたい v0.3 ─ ながれる言葉と、筆の止めどき。</div>
+    <div class="ver">ぶたい v0.4 ─ ロビーができて、フラグが立ったよ。</div>
   </div>
   <div id="gfoot">
     <button id="closeGakuya">保存してとじる</button>
@@ -394,19 +481,46 @@ function loadK(k, fb){
 }
 function saveK(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
 
-let G    = Object.assign({ orKey:"", locals:[{name:"",url:""},{name:"",url:""}] }, loadK("butai_global", {}));
-let STG  = Object.assign({ title:"", world:"", direction:"", opening:"", troupe:"duo", flow:"koma" }, loadK("butai_stage", {}));
-let CHR  = Object.assign({ name:"", prompt:"", icon:"", prov:"or", model:"" }, loadK("butai_char", {}));
-let NAR  = Object.assign({ prompt:"", prov:"or", model:"" }, loadK("butai_nar", {}));
-let USR  = Object.assign({ name:"", info:"" }, loadK("butai_user", {}));
-let CHAT = loadK("butai_chat", []);
-
-function saveAll(){
-  saveK("butai_global", G); saveK("butai_stage", STG); saveK("butai_char", CHR);
-  saveK("butai_nar", NAR); saveK("butai_user", USR); saveK("butai_chat", CHAT);
-}
-function saveChat(){ saveK("butai_chat", CHAT); }
+let G = Object.assign({ orKey:"", locals:[{name:"",url:""},{name:"",url:""}] }, loadK("butai_global", {}));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+
+/* ---------- 舞台とトーク（部屋割り） ---------- */
+function newThreadObj(n){ return { id: uid(), title: "トーク" + n }; }
+function newRoomObj(){
+  return {
+    id: uid(), banner: "", memo: "", flags: [], tSeq: 1,
+    stage: { title:"", world:"", direction:"", opening:"", troupe:"duo", flow:"koma" },
+    char:  { name:"", prompt:"", icon:"", prov:"or", model:"" },
+    nar:   { prompt:"", prov:"or", model:"" },
+    user:  { name:"", info:"" },
+    threads: [ newThreadObj(1) ]
+  };
+}
+let ROOMS = loadK("butai_rooms", null);
+let CUR = loadK("butai_cur", {});
+if(!Array.isArray(ROOMS)){
+  /* v0.3以前からのお引っ越し */
+  ROOMS = [];
+  const ls = loadK("butai_stage", null);
+  if(ls){
+    const r = newRoomObj();
+    r.stage = Object.assign(r.stage, ls);
+    r.char = Object.assign(r.char, loadK("butai_char", {}));
+    r.nar = Object.assign(r.nar, loadK("butai_nar", {}));
+    r.user = Object.assign(r.user, loadK("butai_user", {}));
+    saveK("butai_chat_" + r.threads[0].id, loadK("butai_chat", []));
+    ROOMS.push(r);
+    CUR = { roomId: r.id, threadId: r.threads[0].id };
+  }
+  saveK("butai_rooms", ROOMS);
+  saveK("butai_cur", CUR);
+}
+let room = null;
+let STG = null, CHR = null, NAR = null, USR = null, CHAT = [];
+
+function saveRooms(){ saveK("butai_rooms", ROOMS); }
+function saveChat(){ if(CUR.threadId) saveK("butai_chat_" + CUR.threadId, CHAT); }
+function saveAll(){ saveK("butai_global", G); saveRooms(); saveChat(); saveK("butai_cur", CUR); }
 
 /* ---------- 舞台の描画 ---------- */
 const chatEl = $("chat");
@@ -618,6 +732,8 @@ function buildNarMessages(){
   if(STG.direction) sys += "\n# 進行のしかた\n" + STG.direction + "\n";
   sys += "\n# 登場人物\n" + cn + ":\n" + (CHR.prompt || "（設定なし）") + "\n";
   sys += "\n# " + un + "（この物語の相手役）\n" + (USR.info || "（情報なし）") + "\n";
+  if(room.memo && room.memo.trim()) sys += "\n# おぼえ帳（これまでにあった大事なこと）\n" + room.memo.trim() + "\n";
+  sys += flagLines();
   sys += "\n# あなたの書き方\n";
   sys += "- 地の文だけを書く。かぎ括弧の台詞は書かない（登場人物の声は本人が発する）。\n";
   sys += "- 1〜2段落。段落のあいだは空行。ひとつの段落は3文まで、短く。\n";
@@ -635,6 +751,7 @@ function buildCharMessages(){
   let sys = (CHR.prompt.trim() || "あなたは物語の登場人物です。");
   if(stageLines()) sys += "\n\n# 世界観\n" + stageLines();
   sys += "\n# 相手について\n名前: " + un + "\n" + (USR.info || "") + "\n";
+  if(room.memo && room.memo.trim()) sys += "\n# おぼえ（あなたが覚えていること）\n" + room.memo.trim() + "\n";
   sys += "\n# この場の約束\n";
   sys += "- （ ）で囲まれた文は、いまその場で起きている情景や出来事です。あなたは実際にそれを見聞きした人物として、自然に受け止めて振る舞ってください。描写の文そのものに言及したり、誰が書いたのかを気にしたりしないでください。\n";
   sys += "- あなたの返事には、台詞と、あなた自身の所作や表情を自由に織り交ぜて構いません。\n";
@@ -717,6 +834,8 @@ function buildSoloMessages(){
   sys += "\n# 舞台\n" + (stageLines() || "（自由な舞台）");
   if(STG.direction) sys += "\n# 進行のしかた\n" + STG.direction + "\n";
   sys += "\n# " + un + "（この物語の相手役・実在の相手）\n" + (USR.info || "（情報なし）") + "\n";
+  if(room.memo && room.memo.trim()) sys += "\n# おぼえ帳（これまでにあった大事なこと）\n" + room.memo.trim() + "\n";
+  sys += flagLines();
   sys += "\n# 台本の書式（かならず守る）\n";
   sys += "- 地の文の行は「≡ 」で始める。" + cn + "の番の行は「＠ 」で始める。\n";
   sys += "- 「≡」と「＠」を短く織り交ぜる。どちらから始めてもよい。1回の出力はブロック4つまで。\n";
@@ -829,6 +948,7 @@ function parseScriptLive(text){
   const blocks = [];
   let cur = null;
   for(const line of lines){
+    if(/^\s*[✔✓]/.test(line)) continue; /* フラグの合図は見せない */
     const m = line.match(/^\s*([≡＠@])\s?(.*)$/);
     if(m){
       cur = { t: m[1] === "≡" ? "nar" : "char", x: m[2] };
@@ -949,7 +1069,9 @@ async function runGeneration(turn){
         s = await callRole("char", buildSoloMessages());
         hideWait();
       }
-      const blocks = (parseScript(s.text) || []).slice(0, MAXB);
+      const sf = stripFlags(s.text);
+      markFlags(sf.hits);
+      const blocks = (parseScript(sf.text) || []).slice(0, MAXB);
       if(!blocks.length){
         /* 書式が守られなかった時は、まるごとキャラの言葉として受け取る */
         const cm = { id: uid(), t: "char", x: cleanCharText(s.text) || "……", turn: turn, ts: Date.now(), think: s.think || "" };
@@ -993,7 +1115,9 @@ async function runGeneration(turn){
         hideWait();
         narText = nar.text; narThink = nar.think || "";
       }
-      const paras = splitParas(narText);
+      const nf = stripFlags(narText);
+      markFlags(nf.hits);
+      const paras = splitParas(nf.text);
       if(!paras.length) throw new Error("語り手が言葉を失ってしまった…リテイクしてみてね。");
       for(let i = 0; i < paras.length; i++){
         CHAT.push({ id: uid(), t: "nar", x: paras[i], turn: turn, ts: Date.now(), think: i === 0 ? narThink : "" });
@@ -1022,7 +1146,9 @@ async function runGeneration(turn){
       c = await callRole("char", buildCharMessages());
       hideWait();
     }
-    const cm = { id: uid(), t: "char", x: cleanCharText(c.text) || "……", turn: turn, ts: Date.now(), think: c.think || "" };
+    const cf = stripFlags(c.text);
+    markFlags(cf.hits);
+    const cm = { id: uid(), t: "char", x: cleanCharText(cf.text) || "……", turn: turn, ts: Date.now(), think: c.think || "" };
     CHAT.push(cm);
     saveChat();
     if(STG.flow === "nagare") renderChat(); else appendLive(cm);
@@ -1060,6 +1186,139 @@ async function retake(){
   setBusy(false);
 }
 
+/* ---------- ロビーと部屋の行き来 ---------- */
+function renderLobby(){
+  const L = $("lobbyList");
+  L.innerHTML = "";
+  if(!ROOMS.length){
+    const d = document.createElement("div");
+    d.className = "lobbyEmpty";
+    d.textContent = "まだ舞台がないよ。\n下のボタンで最初の舞台を建てよう。";
+    d.style.whiteSpace = "pre-wrap";
+    L.appendChild(d);
+    return;
+  }
+  for(const r of ROOMS){
+    const b = document.createElement("div");
+    b.className = "banner";
+    if(r.banner){
+      const im = document.createElement("div");
+      im.className = "bimg";
+      im.style.backgroundImage = "url(" + r.banner + ")";
+      b.appendChild(im);
+    }
+    const t = document.createElement("span");
+    t.className = "btitle";
+    t.textContent = r.stage.title || "（無題の舞台）";
+    b.appendChild(t);
+    b.onclick = () => enterRoom(r.id);
+    L.appendChild(b);
+  }
+}
+function enterRoom(roomId, threadId){
+  const r = ROOMS.find(x => x.id === roomId);
+  if(!r) { renderLobby(); return; }
+  room = r;
+  if(!room.threads || !room.threads.length){ room.tSeq = 1; room.threads = [newThreadObj(1)]; saveRooms(); }
+  const th = room.threads.find(t => t.id === threadId) || room.threads[room.threads.length - 1];
+  CUR = { roomId: room.id, threadId: th.id };
+  saveK("butai_cur", CUR);
+  STG = room.stage; CHR = room.char; NAR = room.nar; USR = room.user;
+  CHAT = loadK("butai_chat_" + th.id, []);
+  $("lobby").classList.add("off");
+  $("app").classList.add("on");
+  $("roomTitle").textContent = STG.title || "（無題の舞台）";
+  renderThreads();
+  renderChat();
+}
+function backToLobby(){
+  if(busy) return;
+  saveChat();
+  $("app").classList.remove("on");
+  $("lobby").classList.remove("off");
+  renderLobby();
+}
+function switchThread(threadId){
+  if(busy || threadId === CUR.threadId) return;
+  saveChat();
+  openToolsId = null; editingId = null;
+  enterRoom(room.id, threadId);
+}
+function renderThreads(){
+  const T = $("threads");
+  T.innerHTML = "";
+  for(const th of room.threads){
+    const p = document.createElement("button");
+    p.className = "tpill" + (th.id === CUR.threadId ? " on" : "");
+    p.textContent = th.title;
+    p.onclick = () => switchThread(th.id);
+    T.appendChild(p);
+  }
+  const add = document.createElement("button");
+  add.className = "tpill";
+  add.textContent = "＋";
+  add.setAttribute("aria-label", "あたらしいトーク");
+  add.onclick = () => {
+    if(busy) return;
+    room.tSeq = (room.tSeq || room.threads.length) + 1;
+    const th = newThreadObj(room.tSeq);
+    room.threads.push(th);
+    saveRooms();
+    switchThread(th.id);
+  };
+  T.appendChild(add);
+}
+
+/* ---------- フラグ帳 ---------- */
+function renderFlags(){
+  const L = $("flagList");
+  L.innerHTML = "";
+  (room.flags || []).forEach((f, i) => {
+    const d = document.createElement("div");
+    d.className = "flagItem" + (f.done ? " done" : "");
+    const x = document.createElement("span");
+    x.className = "fx";
+    x.textContent = (i + 1) + ". " + f.x;
+    x.onclick = () => { f.done = !f.done; saveRooms(); renderFlags(); };
+    const del = document.createElement("button");
+    del.className = "fdel"; del.textContent = "✕";
+    del.setAttribute("aria-label", "このフラグをけす");
+    del.onclick = () => { room.flags.splice(i, 1); saveRooms(); renderFlags(); };
+    d.appendChild(x); d.appendChild(del);
+    L.appendChild(d);
+  });
+}
+function flagLines(){
+  const fl = room && room.flags || [];
+  if(!fl.length) return "";
+  let s = "\n# フラグ帳（この物語で起きる予定・起きたこと）\n";
+  s += fl.map((f, i) => (i + 1) + ". " + f.x + (f.done ? "（済み）" : "")).join("\n") + "\n";
+  s += "- フラグは物語の種。自然な流れの中でだけ芽吹かせる。無理に急がせない。\n";
+  s += "- まだ済みでないフラグの出来事が、いま実際に起きたら、その場面の直後に「✔ 番号」だけの行を書く（例: ✔ 2）。それ以外の用途で✔の行を使わない。\n";
+  return s;
+}
+function stripFlags(text){
+  const hits = [];
+  const out = String(text || "").split("\n").filter(line => {
+    const m = line.match(/^\s*[✔✓]\s*([0-9０-９]+)\s*$/);
+    if(m){
+      hits.push(parseInt(m[1].replace(/[０-９]/g, c => "０１２３４５６７８９".indexOf(c)), 10));
+      return false;
+    }
+    return true;
+  }).join("\n");
+  return { text: out, hits: hits };
+}
+function markFlags(hits){
+  if(!hits || !hits.length) return;
+  let ch = false;
+  for(const n of hits){
+    const f = (room.flags || [])[n - 1];
+    if(f && !f.done){ f.done = true; ch = true; }
+  }
+  if(ch) saveRooms();
+}
+
 /* ---------- 楽屋 ---------- */
 function provOptions(sel, val){
   const names = [
@@ -1087,6 +1346,11 @@ function openGakuya(){
   $("l1Name").value = G.locals[0].name; $("l1Url").value = G.locals[0].url;
   $("l2Name").value = G.locals[1].name; $("l2Url").value = G.locals[1].url;
   provOptions($("cProv"), CHR.prov); provOptions($("nProv"), NAR.prov);
+  $("rMemo").value = room.memo || "";
+  renderFlags();
+  const bp = $("bannerPrev");
+  bp.style.backgroundImage = room.banner ? "url(" + room.banner + ")" : "";
+  bp.textContent = room.banner ? "" : "🖼";
   const p = $("iconPrev");
   p.style.backgroundImage = CHR.icon ? "url(" + CHR.icon + ")" : "";
   p.textContent = CHR.icon ? "" : "🎭";
@@ -1104,9 +1368,10 @@ function closeGakuya(){
   G.orKey = $("orKey").value.trim();
   G.locals[0] = { name: $("l1Name").value.trim(), url: $("l1Url").value.trim() };
   G.locals[1] = { name: $("l2Name").value.trim(), url: $("l2Url").value.trim() };
+  room.memo = $("rMemo").value;
   saveAll();
   $("gakuya").classList.remove("open");
-  $("stageTitle").textContent = STG.title || "ぶたい";
+  $("roomTitle").textContent = STG.title || "（無題の舞台）";
   renderChat();
 }
 function pickIcon(file){
@@ -1129,12 +1394,37 @@ function pickIcon(file){
   };
   rd.readAsDataURL(file);
 }
+function pickBanner(file){
+  const rd = new FileReader();
+  rd.onload = () => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, 720 / Math.max(img.width, img.height));
+      const cv = document.createElement("canvas");
+      cv.width = Math.round(img.width * scale);
+      cv.height = Math.round(img.height * scale);
+      cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
+      room.banner = cv.toDataURL("image/jpeg", 0.8);
+      const bp = $("bannerPrev");
+      bp.style.backgroundImage = "url(" + room.banner + ")";
+      bp.textContent = "";
+      saveRooms();
+    };
+    img.src = rd.result;
+  };
+  rd.readAsDataURL(file);
+}
 
 /* ---------- お守り ---------- */
 function exportOmamori(){
   closeGakuyaValuesOnly();
-  const pack = { app: "butai", version: 1, ts: Date.now(),
-    global: G, stage: STG, char: CHR, nar: NAR, user: USR, chat: CHAT };
+  saveChat();
+  const chats = {};
+  for(const r of ROOMS) for(const t of r.threads){
+    chats[t.id] = (t.id === CUR.threadId) ? CHAT : loadK("butai_chat_" + t.id, []);
+  }
+  const pack = { app: "butai", version: 2, ts: Date.now(),
+    global: G, rooms: ROOMS, cur: CUR, chats: chats };
   const blob = new Blob([JSON.stringify(pack)], { type: "application/json" });
   const a = document.createElement("a");
   const d = new Date();
@@ -1157,6 +1447,7 @@ function closeGakuyaValuesOnly(){
     G.orKey = $("orKey").value.trim();
     G.locals[0] = { name: $("l1Name").value.trim(), url: $("l1Url").value.trim() };
     G.locals[1] = { name: $("l2Name").value.trim(), url: $("l2Url").value.trim() };
+    room.memo = $("rMemo").value;
     saveAll();
   }
 }
@@ -1166,16 +1457,30 @@ function importOmamori(file){
     try{
       const pack = JSON.parse(rd.result);
       if(pack.app !== "butai") throw new Error("これは「ぶたい」のお守りじゃないみたい。");
-      if(!confirm("お守りから復元する？いまの舞台とトークは、お守りの中身に置き換わるよ。")) return;
+      if(!confirm("お守りから復元する？いまの舞台とトークはぜんぶ、お守りの中身に置き換わるよ。")) return;
       G = Object.assign({ orKey:"", locals:[{name:"",url:""},{name:"",url:""}] }, pack.global || {});
-      STG = Object.assign({ title:"", world:"", direction:"", opening:"" }, pack.stage || {});
-      CHR = Object.assign({ name:"", prompt:"", icon:"", prov:"or", model:"" }, pack.char || {});
-      NAR = Object.assign({ prompt:"", prov:"or", model:"" }, pack.nar || {});
-      USR = Object.assign({ name:"", info:"" }, pack.user || {});
-      CHAT = Array.isArray(pack.chat) ? pack.chat : [];
-      saveAll();
-      $("stageTitle").textContent = STG.title || "ぶたい";
-      openGakuya(); renderChat();
+      if(pack.version >= 2 && Array.isArray(pack.rooms)){
+        ROOMS = pack.rooms.map(r => Object.assign(newRoomObj(), r));
+        const chats = pack.chats || {};
+        for(const r of ROOMS) for(const t of r.threads){
+          saveK("butai_chat_" + t.id, Array.isArray(chats[t.id]) ? chats[t.id] : []);
+        }
+        CUR = pack.cur || {};
+      }else{
+        /* むかしのお守り（ひと舞台ぶん） */
+        const r = newRoomObj();
+        r.stage = Object.assign(r.stage, pack.stage || {});
+        r.char = Object.assign(r.char, pack.char || {});
+        r.nar = Object.assign(r.nar, pack.nar || {});
+        r.user = Object.assign(r.user, pack.user || {});
+        saveK("butai_chat_" + r.threads[0].id, Array.isArray(pack.chat) ? pack.chat : []);
+        ROOMS = [r];
+        CUR = { roomId: r.id, threadId: r.threads[0].id };
+      }
+      saveK("butai_rooms", ROOMS); saveK("butai_cur", CUR); saveK("butai_global", G);
+      $("gakuya").classList.remove("open");
+      if(CUR.roomId && ROOMS.find(r => r.id === CUR.roomId)) enterRoom(CUR.roomId, CUR.threadId);
+      else backToLobby();
       alert("おかえり。お守りから戻したよ。");
     }catch(e){
       alert(e && e.message ? e.message : "お守りが読めなかった…ファイルを確かめてみてね。");
@@ -1267,9 +1572,49 @@ $("exportBtn").onclick = exportOmamori;
 $("importBtn").onclick = () => $("importFile").click();
 $("importFile").onchange = e => { if(e.target.files[0]) importOmamori(e.target.files[0]); e.target.value = ""; };
 $("clearBtn").onclick = () => {
-  if(!confirm("トークを白紙にもどす？（舞台やキャラの設定は残るよ）")) return;
+  if(!confirm("このトークを白紙にもどす？（舞台やキャラの設定は残るよ）")) return;
   CHAT = []; saveChat(); renderChat();
   $("gakuya").classList.remove("open");
+};
+$("delThreadBtn").onclick = () => {
+  if(room.threads.length <= 1){ alert("最後のひとつは消せないの。「白紙にもどす」を使ってね。"); return; }
+  const th = room.threads.find(t => t.id === CUR.threadId);
+  if(!confirm("「" + (th ? th.title : "このトーク") + "」をけす？もどせないよ。")) return;
+  try{ localStorage.removeItem("butai_chat_" + CUR.threadId); }catch(e){}
+  room.threads = room.threads.filter(t => t.id !== CUR.threadId);
+  saveRooms();
+  $("gakuya").classList.remove("open");
+  enterRoom(room.id);
+};
+$("delRoomBtn").onclick = () => {
+  if(!confirm("この舞台をとりこわす？設定もトークも、ぜんぶ消えてもどせないよ。")) return;
+  for(const t of room.threads){ try{ localStorage.removeItem("butai_chat_" + t.id); }catch(e){} }
+  ROOMS = ROOMS.filter(r => r.id !== room.id);
+  CUR = {};
+  saveK("butai_rooms", ROOMS); saveK("butai_cur", CUR);
+  $("gakuya").classList.remove("open");
+  $("app").classList.remove("on");
+  $("lobby").classList.remove("off");
+  renderLobby();
+};
+$("backBtn").onclick = backToLobby;
+$("newRoomBtn").onclick = () => {
+  const r = newRoomObj();
+  ROOMS.push(r);
+  saveRooms();
+  enterRoom(r.id);
+  openGakuya();
+};
+$("bannerBtn").onclick = () => $("bannerFile").click();
+$("bannerPrev").onclick = () => $("bannerFile").click();
+$("bannerFile").onchange = e => { if(e.target.files[0]) pickBanner(e.target.files[0]); e.target.value = ""; };
+$("flagAdd").onclick = () => {
+  const v = $("flagNew").value.trim();
+  if(!v) return;
+  room.flags = room.flags || [];
+  room.flags.push({ id: uid(), x: v, done: false });
+  $("flagNew").value = "";
+  saveRooms(); renderFlags();
 };
 $("field").addEventListener("input", function(){
   this.style.height = "auto";
@@ -1277,8 +1622,11 @@ $("field").addEventListener("input", function(){
 });
 
 /* 幕開け */
-$("stageTitle").textContent = STG.title || "ぶたい";
-renderChat();
+if(CUR.roomId && ROOMS.find(r => r.id === CUR.roomId)){
+  enterRoom(CUR.roomId, CUR.threadId);
+}else{
+  renderLobby();
+}
 </script>
 </body>
 </html>
