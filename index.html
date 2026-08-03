@@ -283,6 +283,14 @@
         </select>
         <p class="hint">ひとり座長は、キャラ欄のモデルが語り手とキャラの二役を演じるよ。呼び出しが1回で済んで、地の文と台詞が短く交互に進むの。語り手欄のプロンプトは、二役のうちの語り手の役作りとしてちゃんと渡るよ。</p>
       </div>
+      <div class="field">
+        <label for="sFlow">みせかた</label>
+        <select id="sFlow">
+          <option value="koma">ひと枠ずつ（書き上がってから、コマ送りで）</option>
+          <option value="nagare">1文字ずつ（書きながら、ながれるように）</option>
+        </select>
+        <p class="hint">「1文字ずつ」は書いているそばから画面に流れるから、待ち時間がぐっと短く感じるよ。</p>
+      </div>
     </div>
 
     <div class="sec">
@@ -368,7 +376,7 @@
       <p class="hint" style="margin-top:6px">舞台やキャラの設定はそのまま、会話だけを消すよ。</p>
     </div>
 
-    <div class="ver">ぶたい v0.2 ─ 座組みが選べるようになったよ。</div>
+    <div class="ver">ぶたい v0.3 ─ ながれる言葉と、筆の止めどき。</div>
   </div>
   <div id="gfoot">
     <button id="closeGakuya">保存してとじる</button>
@@ -387,7 +395,7 @@ function loadK(k, fb){
 function saveK(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
 
 let G    = Object.assign({ orKey:"", locals:[{name:"",url:""},{name:"",url:""}] }, loadK("butai_global", {}));
-let STG  = Object.assign({ title:"", world:"", direction:"", opening:"", troupe:"duo" }, loadK("butai_stage", {}));
+let STG  = Object.assign({ title:"", world:"", direction:"", opening:"", troupe:"duo", flow:"koma" }, loadK("butai_stage", {}));
 let CHR  = Object.assign({ name:"", prompt:"", icon:"", prov:"or", model:"" }, loadK("butai_char", {}));
 let NAR  = Object.assign({ prompt:"", prov:"or", model:"" }, loadK("butai_nar", {}));
 let USR  = Object.assign({ name:"", info:"" }, loadK("butai_user", {}));
@@ -711,10 +719,11 @@ function buildSoloMessages(){
   sys += "\n# " + un + "（この物語の相手役・実在の相手）\n" + (USR.info || "（情報なし）") + "\n";
   sys += "\n# 台本の書式（かならず守る）\n";
   sys += "- 地の文の行は「≡ 」で始める。" + cn + "の番の行は「＠ 」で始める。\n";
-  sys += "- 「≡」→「＠」→「≡」→「＠」と短く交互に。1回の出力は1〜2往復まで。\n";
+  sys += "- 「≡」と「＠」を短く織り交ぜる。どちらから始めてもよい。1回の出力はブロック4つまで。\n";
   sys += "- 「≡」は1段落・3文まで。台詞は書かない。" + cn + "の内心は断定せず、所作・気配・情景として描く。\n";
-  sys += "- 「＠」は" + cn + "のひとこと〜数文。台詞と、" + cn + "自身の短い所作を自由に。\n";
+  sys += "- 「＠」は" + cn + "の番。台詞でも、短い所作や内心だけでもよい。ひとこと〜数文で。\n";
   sys += "- " + un + "の台詞・行動・内心は書かない。" + un + "のことは本人だけが決める。\n";
+  sys += "- " + un + "が次に何かを言ったり動いたりできる余地で、かならず筆を止める。" + un + "の反応や返事や許可を想像して、先へ進めない。\n";
   sys += "- マーカーで始まる行のほかは、何も出力しない（前置き・説明・記号の囲みは禁止）。\n";
   const user = (CHAT.length ? "ここまでの舞台:\n\n" + transcriptText() + "\n\n---\n" : "") +
     "台本の続きを書いてください。";
@@ -737,6 +746,147 @@ function parseScript(text){
   }
   const out = blocks.map(b => ({ t: b.t, x: b.x.trim() })).filter(b => b.x);
   return out.length ? out : null;
+}
+
+/* ---------- ながれ（ストリーミング） ---------- */
+function stripThinkLive(t){
+  let x = String(t || "").replace(/<think>[\s\S]*?<\/think>/g, "");
+  const i = x.indexOf("<think>");
+  if(i >= 0) x = x.slice(0, i);
+  return x;
+}
+async function callRoleStream(role, messages, onUpdate){
+  const R = role === "nar" ? NAR : CHR;
+  const label = role === "nar" ? "語り手" : (CHR.name || "キャラ");
+  if(!R.model.trim()) throw new Error(label + "のモデルIDが空だよ。楽屋で書いてね。");
+  const ep = endpointOf(R.prov);
+  const ctrl = new AbortController();
+  const tm = setTimeout(() => ctrl.abort(), 180000);
+  let res;
+  try{
+    res = await fetch(ep.url, {
+      method: "POST",
+      headers: Object.assign(
+        { "Content-Type": "application/json" },
+        ep.key ? { "Authorization": "Bearer " + ep.key } : {}
+      ),
+      body: JSON.stringify({ model: R.model.trim(), messages: messages, stream: true }),
+      signal: ctrl.signal
+    });
+  }catch(e){
+    clearTimeout(tm);
+    if(e.name === "AbortError") throw new Error(label + "の返事が時間切れ…もう一度リテイクしてみてね。");
+    throw new Error(label + "につながらなかった…アドレスと電波を見てみてね。");
+  }
+  if(!res.ok){
+    clearTimeout(tm);
+    let detail = "";
+    try{ detail = (await res.text()).slice(0, 200); }catch(e){}
+    throw new Error(label + "でつまずいた（HTTP " + res.status + "）" + (detail ? "\n" + detail : ""));
+  }
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let raw = "", text = "", think = "", enough = false;
+  try{
+    let carry = "";
+    while(true){
+      const { done, value } = await reader.read();
+      if(done) break;
+      carry += dec.decode(value, { stream: true });
+      const lines = carry.split("\n");
+      carry = lines.pop();
+      for(const line of lines){
+        const s = line.trim();
+        if(!s.startsWith("data:")) continue;
+        const payload = s.slice(5).trim();
+        if(payload === "[DONE]") continue;
+        let j;
+        try{ j = JSON.parse(payload); }catch(e){ continue; }
+        const d = (j.choices && j.choices[0] && j.choices[0].delta) || {};
+        if(d.reasoning) think += d.reasoning;
+        if(d.content){
+          text += d.content;
+          if(onUpdate && onUpdate(stripThinkLive(text)) === false){
+            enough = true;
+            break;
+          }
+        }
+      }
+      if(enough){ try{ ctrl.abort(); }catch(e){} break; }
+    }
+  }catch(e){
+    if(!enough && e.name !== "AbortError"){ clearTimeout(tm); throw new Error(label + "のながれが途切れちゃった…もう一度試してみてね。"); }
+  }
+  clearTimeout(tm);
+  raw = text;
+  const tk = raw.match(/<think>([\s\S]*?)<\/think>/);
+  if(tk) think = (think ? think + "\n" : "") + tk[1].trim();
+  return { text: stripThinkLive(raw).trim(), think: think.trim() };
+}
+/* 途中まででも読める台本パーサ（刻みは残す・整えは最後に） */
+function parseScriptLive(text){
+  const lines = String(text || "").split("\n");
+  const blocks = [];
+  let cur = null;
+  for(const line of lines){
+    const m = line.match(/^\s*([≡＠@])\s?(.*)$/);
+    if(m){
+      cur = { t: m[1] === "≡" ? "nar" : "char", x: m[2] };
+      blocks.push(cur);
+    }else if(cur){
+      cur.x += "\n" + line;
+    }
+  }
+  return blocks;
+}
+/* ながれ中の仮の枠 */
+let streamEls = [];
+function streamShell(t){
+  const w = chatEl.querySelector(".welcome");
+  if(w) w.remove();
+  let el, tx;
+  if(t === "nar"){
+    el = document.createElement("div");
+    el.className = "nar in";
+    el.innerHTML = '<span class="nmark">' + MARK_SVG + '</span>';
+    tx = document.createElement("div");
+    tx.className = "ntext";
+    el.appendChild(tx);
+  }else{
+    el = document.createElement("div");
+    el.className = "crow in";
+    const head = document.createElement("div");
+    head.className = "chead";
+    const av = document.createElement("span");
+    av.className = "cava"; avatarInto(av);
+    const nm = document.createElement("span");
+    nm.className = "cname"; nm.textContent = CHR.name || "この子";
+    head.appendChild(av); head.appendChild(nm);
+    tx = document.createElement("div");
+    tx.className = "cbubble";
+    el.appendChild(head); el.appendChild(tx);
+  }
+  el._tx = tx; el._t = t;
+  chatEl.appendChild(el);
+  streamEls.push(el);
+  return el;
+}
+function streamPaint(blocks){
+  const near = chatEl.scrollHeight - chatEl.scrollTop - chatEl.clientHeight < 160;
+  for(let i = 0; i < blocks.length; i++){
+    if(i >= streamEls.length || streamEls[i]._t !== blocks[i].t){
+      /* 型がずれたら描き直し */
+      for(const el of streamEls.splice(i)) el.remove();
+      streamShell(blocks[i].t);
+    }
+    const v = blocks[i].x.replace(/^\n+/, "");
+    if(streamEls[i]._tx.textContent !== v) streamEls[i]._tx.textContent = v;
+  }
+  if(near) scrollBottom();
+}
+function streamClear(){
+  for(const el of streamEls) el.remove();
+  streamEls = [];
 }
 
 /* ---------- 進行 ---------- */
@@ -780,51 +930,102 @@ async function runGeneration(turn){
     }
     if(STG.troupe === "solo"){
       /* ひとり座長: キャラ欄のモデルが二役 */
-      showWait("nar");
-      const s = await callRole("char", buildSoloMessages());
-      hideWait();
-      const blocks = parseScript(s.text);
-      if(!blocks){
+      const MAXB = 4;
+      let s;
+      if(STG.flow === "nagare"){
+        showWait("nar");
+        let painted = false;
+        s = await callRoleStream("char", buildSoloMessages(), txt => {
+          const blocks = parseScriptLive(txt);
+          if(!blocks.length) return true;
+          if(!painted){ hideWait(); painted = true; }
+          streamPaint(blocks.slice(0, MAXB));
+          return blocks.length <= MAXB; /* 5枠目が始まったら、そこで筆を置いてもらう */
+        });
+        hideWait();
+        streamClear();
+      }else{
+        showWait("nar");
+        s = await callRole("char", buildSoloMessages());
+        hideWait();
+      }
+      const blocks = (parseScript(s.text) || []).slice(0, MAXB);
+      if(!blocks.length){
         /* 書式が守られなかった時は、まるごとキャラの言葉として受け取る */
         const cm = { id: uid(), t: "char", x: cleanCharText(s.text) || "……", turn: turn, ts: Date.now(), think: s.think || "" };
-        CHAT.push(cm); saveChat(); appendLive(cm);
+        CHAT.push(cm); saveChat();
+        if(STG.flow === "nagare") renderChat(); else appendLive(cm);
         return;
       }
       for(let i = 0; i < blocks.length; i++){
         const b = blocks[i];
-        const m = { id: uid(), t: b.t, x: b.t === "char" ? cleanCharText(b.x) : b.x,
-                    turn: turn, ts: Date.now(), think: i === 0 ? (s.think || "") : "" };
-        CHAT.push(m);
-        appendLive(m);
-        if(i < blocks.length - 1) await sleep(560);
+        CHAT.push({ id: uid(), t: b.t, x: b.t === "char" ? cleanCharText(b.x) : b.x,
+                    turn: turn, ts: Date.now(), think: i === 0 ? (s.think || "") : "" });
+        if(STG.flow !== "nagare"){
+          appendLive(CHAT[CHAT.length - 1]);
+          if(i < blocks.length - 1) await sleep(560);
+        }
       }
       saveChat();
+      if(STG.flow === "nagare") renderChat();
       return;
     }
     /* ふたり体制 */
-    let paras = null, narThink = "";
+    let narThink = "";
     if(hasScene || !STG.opening.trim()){
-      showWait("nar");
-      const nar = await callRole("nar", buildNarMessages());
-      hideWait();
-      paras = splitParas(nar.text);
-      narThink = nar.think || "";
+      let narText = "";
+      if(STG.flow === "nagare"){
+        showWait("nar");
+        let painted = false;
+        const nar = await callRoleStream("nar", buildNarMessages(), txt => {
+          const paras = txt.split(/\n\s*\n/).map(s2 => s2.replace(/^\n+/, "")).filter((s2, i2, a) => s2 || i2 === a.length - 1);
+          if(!paras.length) return true;
+          if(!painted){ hideWait(); painted = true; }
+          streamPaint(paras.slice(0, 3).map(x => ({ t: "nar", x: x })));
+          return true;
+        });
+        hideWait();
+        streamClear();
+        narText = nar.text; narThink = nar.think || "";
+      }else{
+        showWait("nar");
+        const nar = await callRole("nar", buildNarMessages());
+        hideWait();
+        narText = nar.text; narThink = nar.think || "";
+      }
+      const paras = splitParas(narText);
       if(!paras.length) throw new Error("語り手が言葉を失ってしまった…リテイクしてみてね。");
       for(let i = 0; i < paras.length; i++){
-        const m = { id: uid(), t: "nar", x: paras[i], turn: turn, ts: Date.now(), think: i === 0 ? narThink : "" };
-        CHAT.push(m);
-        appendLive(m);
-        await sleep(560);
+        CHAT.push({ id: uid(), t: "nar", x: paras[i], turn: turn, ts: Date.now(), think: i === 0 ? narThink : "" });
+        if(STG.flow !== "nagare"){
+          appendLive(CHAT[CHAT.length - 1]);
+          await sleep(560);
+        }
       }
       saveChat();
+      if(STG.flow === "nagare") renderChat();
     }
-    showWait("char");
-    const c = await callRole("char", buildCharMessages());
-    hideWait();
+    let c;
+    if(STG.flow === "nagare"){
+      showWait("char");
+      let painted = false;
+      c = await callRoleStream("char", buildCharMessages(), txt => {
+        if(!txt.trim()) return true;
+        if(!painted){ hideWait(); painted = true; }
+        streamPaint([{ t: "char", x: txt }]);
+        return true;
+      });
+      hideWait();
+      streamClear();
+    }else{
+      showWait("char");
+      c = await callRole("char", buildCharMessages());
+      hideWait();
+    }
     const cm = { id: uid(), t: "char", x: cleanCharText(c.text) || "……", turn: turn, ts: Date.now(), think: c.think || "" };
     CHAT.push(cm);
     saveChat();
-    appendLive(cm);
+    if(STG.flow === "nagare") renderChat(); else appendLive(cm);
   }catch(e){
     saveChat();
     showError(e && e.message ? e.message : "つまずいてしまった…もう一度試してみてね。");
@@ -878,6 +1079,7 @@ function openGakuya(){
   $("sTitle").value = STG.title; $("sWorld").value = STG.world;
   $("sDirection").value = STG.direction; $("sOpening").value = STG.opening;
   $("sTroupe").value = STG.troupe || "duo";
+  $("sFlow").value = STG.flow || "koma";
   $("cName").value = CHR.name; $("cPrompt").value = CHR.prompt; $("cModel").value = CHR.model;
   $("nPrompt").value = NAR.prompt; $("nModel").value = NAR.model;
   $("uName").value = USR.name; $("uInfo").value = USR.info;
@@ -894,6 +1096,7 @@ function closeGakuya(){
   STG.title = $("sTitle").value.trim(); STG.world = $("sWorld").value;
   STG.direction = $("sDirection").value; STG.opening = $("sOpening").value;
   STG.troupe = $("sTroupe").value;
+  STG.flow = $("sFlow").value;
   CHR.name = $("cName").value.trim(); CHR.prompt = $("cPrompt").value;
   CHR.prov = $("cProv").value; CHR.model = $("cModel").value.trim();
   NAR.prompt = $("nPrompt").value; NAR.prov = $("nProv").value; NAR.model = $("nModel").value.trim();
@@ -946,6 +1149,7 @@ function closeGakuyaValuesOnly(){
     STG.title = $("sTitle").value.trim(); STG.world = $("sWorld").value;
     STG.direction = $("sDirection").value; STG.opening = $("sOpening").value;
   STG.troupe = $("sTroupe").value;
+  STG.flow = $("sFlow").value;
     CHR.name = $("cName").value.trim(); CHR.prompt = $("cPrompt").value;
     CHR.prov = $("cProv").value; CHR.model = $("cModel").value.trim();
     NAR.prompt = $("nPrompt").value; NAR.prov = $("nProv").value; NAR.model = $("nModel").value.trim();
