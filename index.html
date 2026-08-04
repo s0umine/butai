@@ -142,6 +142,19 @@
   }
   #retakeBtn:active{color:var(--text);border-color:var(--muted)}
 
+  .seled{outline:1.5px solid var(--accent);outline-offset:4px;border-radius:12px}
+  #selBar{
+    display:none;justify-content:center;align-items:center;gap:14px;
+    padding:8px 16px;flex-shrink:0;
+  }
+  #selBar.show{display:flex}
+  #selBar span{font-size:13px;color:var(--muted)}
+  #selBar button{
+    border:1px solid var(--line);border-radius:999px;background:none;
+    color:var(--text);font-size:13px;padding:6px 18px;cursor:pointer;font-family:inherit;
+  }
+  #selBar #selDel{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 45%,transparent)}
+
   /* ---------- 声を出すところ（入力欄） ---------- */
   footer{
     flex-shrink:0;display:flex;gap:10px;align-items:flex-end;
@@ -154,6 +167,12 @@
     outline:none;
   }
   #field::placeholder{color:#6d6d78}
+  #astBtn{
+    width:38px;height:44px;border:none;background:none;flex-shrink:0;
+    color:#6d6d78;font-size:19px;cursor:pointer;font-family:inherit;
+    padding:0;
+  }
+  #astBtn.on{color:var(--accent)}
   #sendBtn{
     width:44px;height:44px;border-radius:50%;border:none;flex-shrink:0;
     background:var(--accent);color:#fff;cursor:pointer;
@@ -161,7 +180,7 @@
     transition:opacity .15s, background .15s;
   }
   #sendBtn:active{background:var(--accent-deep)}
-  #sendBtn.busy{opacity:.4;pointer-events:none}
+  #sendBtn.busy{background:#3a3a44}
   #sendBtn svg{width:18px;height:18px;margin-left:2px}
 
   /* ---------- 楽屋（設定） ---------- */
@@ -335,8 +354,14 @@
 
   <div id="chat"></div>
   <div id="retakeRow"><button id="retakeBtn">↻ リテイク</button></div>
+  <div id="selBar">
+    <span id="selCount">0件</span>
+    <button id="selDel">けす</button>
+    <button id="selCancel">やめる</button>
+  </div>
 
   <footer>
+    <button id="astBtn" aria-label="地の文として書く">✱</button>
     <textarea id="field" rows="1" placeholder="メッセージ"></textarea>
     <button id="sendBtn" aria-label="進行する">
       <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6,4 20,12 6,20"/></svg>
@@ -512,6 +537,14 @@
         <p class="hint">ひとり座長は、キャラ欄のモデルが二役を演じるよ。語り手欄のプロンプトも役作りとしてちゃんと渡るの。</p>
       </div>
       <div class="field">
+        <label for="sBlocks">語りの長さ（ひとり座長の1進行）</label>
+        <select id="sBlocks">
+          <option value="4">みじかめ（4コマまで）</option>
+          <option value="6">ふつう（6コマまで）</option>
+          <option value="8">ながめ（8コマまで）</option>
+        </select>
+      </div>
+      <div class="field">
         <label for="sFlow">みせかた</label>
         <select id="sFlow">
           <option value="koma">ひと枠ずつ（書き上がってから、コマ送りで）</option>
@@ -573,7 +606,7 @@
       <p class="hint" style="margin-top:6px">白紙は会話だけ消して設定は残すよ。とりこわしは、この舞台のすべて（設定・おもいで・トーク全部）が消えるから気をつけてね。</p>
     </div>
 
-    <div class="ver">ぶたい v0.6 ─ くらが建って、お財布が見えるよ。</div>
+    <div class="ver">ぶたい v0.7 ─ えらんで、とめて、しるしをひとつ。</div>
   </div>
   <div class="sfoot"><button class="closeSheet" data-sheet="settei">保存してとじる</button></div>
 </div>
@@ -658,7 +691,7 @@ function newThreadObj(n){ return { id: uid(), title: "トーク" + n }; }
 function newRoomObj(){
   return {
     id: uid(), banner: "", memo: "", flags: [], tana: [], tSeq: 1,
-    stage: { title:"", world:"", direction:"", opening:"", troupe:"duo", flow:"koma" },
+    stage: { title:"", world:"", direction:"", opening:"", troupe:"duo", flow:"koma", blocks: 6 },
     char:  { name:"", prompt:"", icon:"", prov:"or", model:"" },
     nar:   { prompt:"", prov:"or", model:"" },
     user:  { name:"", info:"" },
@@ -697,11 +730,16 @@ function saveAll(){ saveK("butai_global", G); saveRooms(); saveChat(); saveK("bu
 
 /* ---------- 舞台の描画 ---------- */
 const chatEl = $("chat");
+const SEND_SVG = '<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6,4 20,12 6,20"/></svg>';
+const STOP_SVG = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
+let liveCtrl = null, userStop = false;
 const MARK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="9" x2="14" y2="9"/><line x1="4" y1="15" x2="20" y2="15"/></svg>';
 const THINK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-8 8H4l2.5-3A8 8 0 1 1 21 12z"/></svg>';
 let busy = false;
 let editingId = null;
 let openToolsId = null;
+let selMode = false;
+const selSet = new Set();
 
 function scrollBottom(){ chatEl.scrollTop = chatEl.scrollHeight; }
 
@@ -754,7 +792,7 @@ function buildMsg(m){
     const tx = document.createElement("div");
     tx.className = "ntext"; tx.textContent = m.x;
     wrap.appendChild(mk); wrap.appendChild(tx);
-    tx.onclick = () => toggleTools(m.id);
+    tx.onclick = () => msgTap(m.id);
   }else if(m.t === "char"){
     wrap = document.createElement("div");
     wrap.className = "crow";
@@ -774,7 +812,7 @@ function buildMsg(m){
     }
     const bb = document.createElement("div");
     bb.className = "cbubble"; bb.textContent = m.x;
-    bb.onclick = () => toggleTools(m.id);
+    bb.onclick = () => msgTap(m.id);
     wrap.appendChild(head); wrap.appendChild(bb);
   }else{ /* user */
     wrap = document.createElement("div");
@@ -783,14 +821,41 @@ function buildMsg(m){
     nm.className = "uname"; nm.textContent = USR.name || "";
     const bb = document.createElement("div");
     bb.className = "ububble"; bb.textContent = m.x;
-    bb.onclick = () => toggleTools(m.id);
+    bb.onclick = () => msgTap(m.id);
     if(USR.name) wrap.appendChild(nm);
     wrap.appendChild(bb);
   }
   wrap.dataset.id = m.id;
+  if(selMode && selSet.has(m.id)) wrap.classList.add("seled");
   if(editingId === m.id) mountEdit(wrap, m);
   else if(openToolsId === m.id) mountTools(wrap, m);
   return wrap;
+}
+function msgTap(id){
+  if(busy) return;
+  if(selMode){
+    if(selSet.has(id)) selSet.delete(id); else selSet.add(id);
+    $("selCount").textContent = selSet.size + "件";
+    const el = chatEl.querySelector('[data-id="' + id + '"]');
+    if(el) el.classList.toggle("seled", selSet.has(id));
+    return;
+  }
+  toggleTools(id);
+}
+function enterSel(firstId){
+  selMode = true;
+  selSet.clear();
+  if(firstId) selSet.add(firstId);
+  openToolsId = null; editingId = null;
+  $("selBar").classList.add("show");
+  $("selCount").textContent = selSet.size + "件";
+  renderChat();
+}
+function exitSel(){
+  selMode = false;
+  selSet.clear();
+  $("selBar").classList.remove("show");
+  renderChat();
 }
 
 /* さわった時の小物（コピー・かきなおす） */
@@ -814,7 +879,10 @@ function mountTools(wrap, m){
   const ed = document.createElement("button");
   ed.textContent = "✎ かきなおす";
   ed.onclick = e => { e.stopPropagation(); editingId = m.id; openToolsId = null; renderChat(); };
-  row.appendChild(cp); row.appendChild(ed);
+  const sl = document.createElement("button");
+  sl.textContent = "☑ えらんでけす";
+  sl.onclick = e => { e.stopPropagation(); enterSel(m.id); };
+  row.appendChild(cp); row.appendChild(ed); row.appendChild(sl);
   wrap.appendChild(row);
 }
 function mountEdit(wrap, m){
@@ -909,7 +977,7 @@ function transcriptText(){
   return items.map(m => {
     if(m.t === "nar") return "【地の文】" + m.x;
     if(m.t === "char") return "【" + cn + "】" + m.x;
-    return "【" + un + "】" + m.x;
+    return "【" + un + (m.act ? "・所作や情景（本人が書いた地の文）" : "") + "】" + m.x;
   }).join("\n\n");
 }
 function buildNarMessages(){
@@ -957,7 +1025,7 @@ function buildCharMessages(){
   let buf = [];
   for(const m of CHAT){
     if(m.t === "nar"){ buf.push("（" + m.x + "）"); }
-    else if(m.t === "user"){ buf.push(m.x); }
+    else if(m.t === "user"){ buf.push(m.act ? "（" + m.x + "）" : m.x); }
     else{ /* char */
       if(buf.length){ msgs.push({ role: "user", content: buf.join("\n\n") }); buf = []; }
       msgs.push({ role: "assistant", content: m.x });
@@ -988,6 +1056,7 @@ async function callRole(role, messages){
   if(!R.model.trim()) throw new Error(label + "のモデルIDが空だよ。楽屋で書いてね。");
   const ep = endpointOf(R.prov);
   const ctrl = new AbortController();
+  liveCtrl = ctrl;
   const tm = setTimeout(() => ctrl.abort(), 120000);
   let res;
   try{
@@ -1005,7 +1074,10 @@ async function callRole(role, messages){
     });
   }catch(e){
     clearTimeout(tm);
-    if(e.name === "AbortError") throw new Error(label + "の返事が時間切れ…もう一度リテイクしてみてね。");
+    if(e.name === "AbortError"){
+      if(userStop) throw new Error("__STOP__");
+      throw new Error(label + "の返事が時間切れ…もう一度リテイクしてみてね。");
+    }
     throw new Error(label + "につながらなかった…アドレスと電波を見てみてね。");
   }
   clearTimeout(tm);
@@ -1039,7 +1111,7 @@ function buildSoloMessages(){
   sys += signalRules();
   sys += "\n# 台本の書式（かならず守る）\n";
   sys += "- 地の文の行は「≡ 」で始める。" + cn + "の番の行は「＠ 」で始める。\n";
-  sys += "- 「≡」と「＠」を短く織り交ぜる。どちらから始めてもよい。1回の出力はブロック4つまで。\n";
+  sys += "- 「≡」と「＠」を短く織り交ぜる。どちらから始めてもよい。1回の出力はブロック" + (STG.blocks || 6) + "つまで。\n";
   sys += "- 「≡」は1段落・3文まで。台詞は書かない。" + cn + "の内心は断定せず、所作・気配・情景として描く。\n";
   sys += "- 「＠」は" + cn + "の番。台詞でも、短い所作や内心だけでもよい。ひとこと〜数文で。\n";
   sys += "- " + un + "の台詞・行動・内心は書かない。" + un + "のことは本人だけが決める。\n";
@@ -1113,6 +1185,7 @@ async function callRoleStream(role, messages, onUpdate){
   if(!R.model.trim()) throw new Error(label + "のモデルIDが空だよ。楽屋で書いてね。");
   const ep = endpointOf(R.prov);
   const ctrl = new AbortController();
+  liveCtrl = ctrl;
   const tm = setTimeout(() => ctrl.abort(), 180000);
   let res;
   try{
@@ -1172,7 +1245,7 @@ async function callRoleStream(role, messages, onUpdate){
       if(enough){ try{ ctrl.abort(); }catch(e){} break; }
     }
   }catch(e){
-    if(!enough && e.name !== "AbortError"){ clearTimeout(tm); throw new Error(label + "のながれが途切れちゃった…もう一度試してみてね。"); }
+    if(!enough && !userStop && e.name !== "AbortError"){ clearTimeout(tm); throw new Error(label + "のながれが途切れちゃった…もう一度試してみてね。"); }
   }
   clearTimeout(tm);
   raw = text;
@@ -1264,8 +1337,15 @@ function cleanCharText(text){
 }
 function setBusy(v){
   busy = v;
-  $("sendBtn").classList.toggle("busy", v);
+  const b = $("sendBtn");
+  b.classList.toggle("busy", v);
+  b.innerHTML = v ? STOP_SVG : SEND_SVG;
+  b.setAttribute("aria-label", v ? "ここで止める" : "進行する");
   updateRetake();
+}
+function stopNow(){
+  userStop = true;
+  if(liveCtrl){ try{ liveCtrl.abort(); }catch(e){} }
 }
 function lastGenTurn(){
   for(let i = CHAT.length - 1; i >= 0; i--){
@@ -1274,7 +1354,7 @@ function lastGenTurn(){
   return null;
 }
 function updateRetake(){
-  $("retakeRow").classList.toggle("show", !busy && lastGenTurn() != null);
+  $("retakeRow").classList.toggle("show", !busy && !selMode && lastGenTurn() != null);
 }
 
 async function runGeneration(turn){
@@ -1292,7 +1372,7 @@ async function runGeneration(turn){
     }
     if(STG.troupe === "solo"){
       /* ひとり座長: キャラ欄のモデルが二役 */
-      const MAXB = 4;
+      const MAXB = STG.blocks || 6;
       let s;
       if(STG.flow === "nagare"){
         showWait("nar");
@@ -1396,19 +1476,23 @@ async function runGeneration(turn){
     if(STG.flow === "nagare") renderChat(); else appendLive(cm);
   }catch(e){
     saveChat();
-    showError(e && e.message ? e.message : "つまずいてしまった…もう一度試してみてね。");
+    if(e && e.message === "__STOP__"){ hideWait(); streamClear(); }
+    else showError(e && e.message ? e.message : "つまずいてしまった…もう一度試してみてね。");
   }
 }
 
 async function susumu(){
   if(busy) return;
+  userStop = false;
   const field = $("field");
   const text = field.value.trim();
   setBusy(true);
   openToolsId = null; editingId = null;
   const turn = uid();
   if(text){
-    CHAT.push({ id: uid(), t: "user", x: text, turn: turn, ts: Date.now() });
+    const act = /^\s*\*/.test(text);
+    CHAT.push({ id: uid(), t: "user", x: text.replace(/^\s*\*\s*/, ""), act: act, turn: turn, ts: Date.now() });
+    $("astBtn").classList.remove("on");
     field.value = ""; field.style.height = "auto";
     saveChat(); renderChat();
   }
@@ -1419,6 +1503,7 @@ async function susumu(){
 
 async function retake(){
   if(busy) return;
+  userStop = false;
   const t = lastGenTurn();
   if(t == null) return;
   setBusy(true);
@@ -1670,6 +1755,7 @@ function collectOmoide(){
 function openSettei(){
   $("sTroupe").value = STG.troupe || "duo";
   $("sFlow").value = STG.flow || "koma";
+  $("sBlocks").value = String(STG.blocks || 6);
   $("fsRange").value = G.fs || 15;
   $("lhRange").value = Math.round((G.lh || 1.75) * 100);
   paintTypeLabels();
@@ -1681,6 +1767,7 @@ function openSettei(){
 function collectSettei(){
   STG.troupe = $("sTroupe").value;
   STG.flow = $("sFlow").value;
+  STG.blocks = parseInt($("sBlocks").value, 10) || 6;
   G.fs = parseInt($("fsRange").value, 10) || 15;
   G.lh = (parseInt($("lhRange").value, 10) || 175) / 100;
   G.orKey = $("orKey").value.trim();
@@ -1918,7 +2005,11 @@ async function modelsFor(prov){
     const res = await fetch("https://openrouter.ai/api/v1/models");
     if(!res.ok) throw new Error("一覧が取れなかった");
     const j = await res.json();
-    orModels = (j.data || []).map(m => ({ id: m.id, name: m.name || m.id }));
+    orModels = (j.data || []).map(m => ({
+      id: m.id, name: m.name || m.id,
+      pi: m.pricing ? +m.pricing.prompt * 1e6 : null,
+      po: m.pricing ? +m.pricing.completion * 1e6 : null
+    }));
     return orModels;
   }
   const h = localBase(prov);
@@ -1964,7 +2055,13 @@ function attachModelSearch(inputId, listId, provId){
         item.className = "mitem";
         item.textContent = m.name;
         const sub = document.createElement("span");
-        sub.className = "mid"; sub.textContent = m.id;
+        sub.className = "mid";
+        let sm = m.id;
+        if(m.pi != null && !isNaN(m.pi)){
+          const f = v => v === 0 ? "0" : (v < 0.01 ? v.toFixed(4) : v < 1 ? v.toFixed(2) : (Math.round(v * 100) / 100).toString());
+          sm += (m.pi === 0 && m.po === 0) ? "　無料" : "　≈ $" + f(m.pi) + "/M入 · $" + f(m.po) + "/M出";
+        }
+        sub.textContent = sm;
         item.appendChild(sub);
         item.onclick = () => {
           input.value = m.id;
@@ -1981,7 +2078,15 @@ attachModelSearch("cModel", "cList", "cProv");
 attachModelSearch("nModel", "nList", "nProv");
 
 /* ---------- 小さな配線 ---------- */
-$("sendBtn").onclick = susumu;
+$("sendBtn").onclick = () => { if(busy) stopNow(); else { if(selMode) exitSel(); susumu(); } };
+$("selCancel").onclick = exitSel;
+$("selDel").onclick = () => {
+  if(!selSet.size){ exitSel(); return; }
+  if(!confirm(selSet.size + "件をけす？もどせないよ。")) return;
+  CHAT = CHAT.filter(m => !selSet.has(m.id));
+  saveChat();
+  exitSel();
+};
 $("retakeBtn").onclick = retake;
 $("menuBtn").onclick = e => { e.stopPropagation(); $("menuPop").classList.toggle("open"); };
 document.addEventListener("click", e => {
@@ -2012,6 +2117,10 @@ $("bannerBake").onclick = bakeBanner;
 $("bScale").oninput = paintBanner;
 $("bX").oninput = paintBanner;
 $("bY").oninput = paintBanner;
+$("iconBake").onclick = bakeIcon;
+$("iScale").oninput = paintIcon;
+$("iX").oninput = paintIcon;
+$("iY").oninput = paintIcon;
 $("fsRange").oninput = () => { G.fs = parseInt($("fsRange").value, 10); paintTypeLabels(); applyType(); };
 $("lhRange").oninput = () => { G.lh = parseInt($("lhRange").value, 10) / 100; paintTypeLabels(); applyType(); };
 $("exportLogBtn").onclick = exportLog;
@@ -2069,7 +2178,18 @@ $("flagAdd").onclick = () => {
 $("field").addEventListener("input", function(){
   this.style.height = "auto";
   this.style.height = Math.min(this.scrollHeight, 120) + "px";
+  $("astBtn").classList.toggle("on", /^\s*\*/.test(this.value));
 });
+$("astBtn").onclick = () => {
+  const f = $("field");
+  if(/^\s*\*/.test(f.value)){
+    f.value = f.value.replace(/^\s*\*\s*/, "");
+  }else{
+    f.value = "*" + f.value;
+  }
+  $("astBtn").classList.toggle("on", /^\s*\*/.test(f.value));
+  f.focus();
+};
 
 /* 幕開け */
 (async function boot(){
