@@ -624,7 +624,7 @@
       <p class="hint" style="margin-top:6px">白紙は会話だけ消して設定は残すよ。とりこわしは、この舞台のすべて（設定・おもいで・トーク全部）が消えるから気をつけてね。</p>
     </div>
 
-    <div class="ver">ぶたい v0.8 ─ ページが分かれて、色で語るよ。</div>
+    <div class="ver">ぶたい v0.8.1 ─ 「」のない子の声も、ちゃんと聞こえるよ。</div>
   </div>
   <div class="sfoot"><button class="closeSheet" data-sheet="settei">保存してとじる</button></div>
 </div>
@@ -833,6 +833,23 @@ function ububbleHtml(m){
 }
 function charBubbleHtml(x){
   const txt = String(x || "");
+  const lines = txt.split("\n");
+  if(lines.some(l => /^\s*\*/.test(l))){
+    /* 行頭*方式（「」なしで話す子むけ）: *行=所作、それ以外=台詞 */
+    const groups = [];
+    for(const l of lines){
+      if(!l.trim()) continue;
+      const act = /^\s*\*/.test(l);
+      const t = act ? l.replace(/^\s*\*\s*/, "") : l;
+      const g = groups[groups.length - 1];
+      if(g && g.act === act) g.xs.push(t);
+      else groups.push({ act: act, xs: [t] });
+    }
+    return groups.map(g => {
+      const t = esc(g.xs.join("\n"));
+      return g.act ? '<span class="mut">' + t + "</span>" : t;
+    }).join("\n\n");
+  }
   const re = /「[^」]*」/g;
   const segs = [];
   let last = 0, mm;
@@ -844,7 +861,7 @@ function charBubbleHtml(x){
   }
   const tail = txt.slice(last).trim();
   if(tail) segs.push({ sp: false, x: tail });
-  if(!segs.length) return esc(txt);
+  if(!segs.length || !segs.some(s => s.sp)) return esc(txt); /* 「」も*もない返事は、素直にそのまま */
   /* 所作と台詞のあいだは一行あける */
   return segs.map(s => s.sp ? esc(s.x) : '<span class="mut">' + esc(s.x) + "</span>").join("\n\n");
 }
@@ -1094,6 +1111,7 @@ function buildCharMessages(){
   sys += "- （ ）で囲まれた文は、いまその場で起きている情景や出来事です。あなたは実際にそれを見聞きした人物として、自然に受け止めて振る舞ってください。描写の文そのものに言及したり、誰が書いたのかを気にしたりしないでください。\n";
   sys += "- あなたの返事には、台詞と、あなた自身の所作や表情を自由に織り交ぜて構いません。\n";
   sys += "- " + un + "の台詞や行動を、あなたが決めて書かないでください。" + un + "のことは本人だけが決めます。\n";
+  sys += "- あなたの返事のうち、台詞はそのまま書き、所作・表情・内心の行は行頭に * を付けてください（例: *灰を落とす）。台詞に「」を使う書き方でも構いません。\n";
   sys += "- 所作のあとに台詞を続けるときは、あいだに空行をはさんでください。\n";
   sys += "- あなたは" + cn + "として、いまこの場にいます。役から出ないでください。\n";
   const msgs = [{ role: "system", content: sys }];
@@ -1188,7 +1206,8 @@ function buildSoloMessages(){
   sys += "- 地の文の行は「≡ 」で始める。" + cn + "の番の行は「＠ 」で始める。\n";
   sys += "- 「≡」と「＠」を短く織り交ぜる。どちらから始めてもよい。1回の出力はブロック" + (STG.blocks || 6) + "つまで。\n";
   sys += "- 「≡」は1段落・3文まで。台詞は書かない。" + cn + "の内心は断定せず、所作・気配・情景として描く。\n";
-  sys += "- 「＠」は" + cn + "の番。台詞でも、短い所作や内心だけでもよい。ひとこと〜数文で。所作のあとに台詞を続けるときは、あいだに空行をはさむ。\n";
+  sys += "- 「＠」は" + cn + "の番。台詞でも、短い所作や内心だけでもよい。ひとこと〜数文で。\n";
+  sys += "- 「＠」の中では、台詞はそのまま書き、所作・表情・内心の行は行頭に * を付ける（例: *灰を落とす）。台詞に「」を使う書き方でもよい。所作のあとに台詞を続けるときは、あいだに空行をはさむ。\n";
   sys += "- " + un + "の台詞・行動・内心は書かない。" + un + "のことは本人だけが決める。\n";
   sys += "- 【" + un + "】の中の（ ）で囲まれた行は、" + un + "自身が書いた地の文・所作。それ以外の行は" + un + "の台詞。\n";
   sys += "- " + un + "が次に何かを言ったり動いたりできる余地で、かならず筆を止める。" + un + "の反応や返事や許可を想像して、先へ進めない。\n";
