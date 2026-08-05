@@ -14,7 +14,7 @@
     --bubble:#26262c;
     --text:#e9e9ee;
     --muted:#8f8f9a;
-    --nar:#c9c9d3;
+    --nar:#b7b7c4;
     --accent:#7a5cf8;
     --accent-deep:#6a4de0;
     --line:#2c2c34;
@@ -142,6 +142,8 @@
   }
   #retakeBtn:active{color:var(--text);border-color:var(--muted)}
 
+  .cbubble .mut{opacity:.62}
+  .ububble .mut{opacity:.68}
   .seled{outline:1.5px solid var(--accent);outline-offset:4px;border-radius:12px}
   #selBar{
     display:none;justify-content:center;align-items:center;gap:14px;
@@ -372,7 +374,9 @@
 <!-- ---------- 楽屋 ---------- -->
 <div id="menuPop">
   <button data-go="gakuya">🎭 楽屋</button>
-  <button data-go="omoide">📔 おもいで</button>
+  <button data-go="tana">🗄 記憶の棚</button>
+  <button data-go="memo">📔 おぼえ帳</button>
+  <button data-go="flags">🚩 フラグ帳</button>
   <button data-go="settei">⚙️ せってい</button>
 </div>
 
@@ -480,10 +484,10 @@
 </div>
 
 <!-- ---------- おもいで ---------- -->
-<div id="omoide" class="sheet">
-  <header><h1>おもいで</h1><button class="xClose closeSheet" data-sheet="omoide" aria-label="とじる">✕</button></header>
+<!-- ---------- 記憶の棚 ---------- -->
+<div id="tanaSheet" class="sheet">
+  <header><h1>記憶の棚</h1><button class="xClose closeSheet" data-sheet="tanaSheet" aria-label="とじる">✕</button></header>
   <div class="sbody">
-
     <div class="sec">
       <h2>🗄 記憶の棚</h2>
       <div class="duo">
@@ -491,16 +495,30 @@
         <button class="btn" id="tanaAdd" style="flex:0 0 auto">しまう</button>
       </div>
       <div id="tanaList"></div>
-      <p class="hint">1件ずつの記憶。座長・語り手・キャラみんなに渡るよ。物語の中で大事なことが起きると、うちの子が自分でしまうこともあるの。</p>
+      <p class="hint">1件ずつの記憶。座長・語り手・キャラみんなに渡るよ。物語の中で大事なことが起きると、うちの子が自分でしまうこともあるの。タップで書き直し、✕で削除。</p>
     </div>
+  </div>
+  <div class="sfoot"><button class="closeSheet" data-sheet="tanaSheet">保存してとじる</button></div>
+</div>
 
+<!-- ---------- おぼえ帳 ---------- -->
+<div id="memoSheet" class="sheet">
+  <header><h1>おぼえ帳</h1><button class="xClose closeSheet" data-sheet="memoSheet" aria-label="とじる">✕</button></header>
+  <div class="sbody">
     <div class="sec">
       <h2>📔 おぼえ帳</h2>
       <div class="field">
-        <textarea id="rMemo" placeholder="自由に書ける帳面。背景設定の補足、これまでのあらすじ、なんでも。"></textarea>
+        <textarea id="rMemo" style="min-height:220px" placeholder="自由に書ける帳面。背景設定の補足、これまでのあらすじ、なんでも。座長と語り手が毎回読むよ。"></textarea>
       </div>
     </div>
+  </div>
+  <div class="sfoot"><button class="closeSheet" data-sheet="memoSheet">保存してとじる</button></div>
+</div>
 
+<!-- ---------- フラグ帳 ---------- -->
+<div id="flagSheet" class="sheet">
+  <header><h1>フラグ帳</h1><button class="xClose closeSheet" data-sheet="flagSheet" aria-label="とじる">✕</button></header>
+  <div class="sbody">
     <div class="sec">
       <h2>🚩 フラグ帳</h2>
       <div class="duo">
@@ -516,10 +534,10 @@
       <div id="flagList"></div>
       <p class="hint">🚩フラグ=物語の種、🌷want=うちの子がしたいこと、🤝promise=二人の約束、🌠future=いずれ叶えたいこと。物語の中で実際に起きたら自動で済みになるよ。うちの子が自分で立てることもあるの。タップで手動切り替え、✕で削除。</p>
     </div>
-
   </div>
-  <div class="sfoot"><button class="closeSheet" data-sheet="omoide">保存してとじる</button></div>
+  <div class="sfoot"><button class="closeSheet" data-sheet="flagSheet">保存してとじる</button></div>
 </div>
+
 
 <!-- ---------- せってい ---------- -->
 <div id="settei" class="sheet">
@@ -606,7 +624,7 @@
       <p class="hint" style="margin-top:6px">白紙は会話だけ消して設定は残すよ。とりこわしは、この舞台のすべて（設定・おもいで・トーク全部）が消えるから気をつけてね。</p>
     </div>
 
-    <div class="ver">ぶたい v0.7 ─ えらんで、とめて、しるしをひとつ。</div>
+    <div class="ver">ぶたい v0.8 ─ ページが分かれて、色で語るよ。</div>
   </div>
   <div class="sfoot"><button class="closeSheet" data-sheet="settei">保存してとじる</button></div>
 </div>
@@ -739,7 +757,8 @@ let busy = false;
 let editingId = null;
 let openToolsId = null;
 let selMode = false;
-const selSet = new Set();
+let selSet = new Set();
+let UNITS = [], ID2U = {}, selAnchor = null;
 
 function scrollBottom(){ chatEl.scrollTop = chatEl.scrollHeight; }
 
@@ -749,7 +768,20 @@ function avatarInto(el){
   if(!CHR.icon) el.textContent = "🎭";
 }
 
+function computeUnits(){
+  UNITS = []; ID2U = {};
+  for(const m of CHAT){
+    const lastU = UNITS[UNITS.length - 1];
+    if(m.t !== "user" && lastU && lastU.gen && lastU.turn === m.turn){
+      lastU.ids.push(m.id);
+    }else{
+      UNITS.push({ gen: m.t !== "user", turn: m.turn, ids: [m.id] });
+    }
+    ID2U[m.id] = UNITS.length - 1;
+  }
+}
 function renderChat(){
+  computeUnits();
   chatEl.innerHTML = "";
   if(CHAT.length === 0){
     const w = document.createElement("div");
@@ -782,6 +814,40 @@ function renderChat(){
   scrollBottom();
 }
 
+function esc(s){
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+function userLines(m){
+  const lines = String(m.x || "").split("\n");
+  if(m.act) return lines.map(l => ({ act: true, text: l }));
+  return lines.map(l => {
+    const a = /^\s*\*/.test(l);
+    return { act: a, text: a ? l.replace(/^\s*\*\s*/, "") : l };
+  });
+}
+function userForModel(m){
+  return userLines(m).map(l => (l.act && l.text.trim()) ? "（" + l.text + "）" : l.text).join("\n");
+}
+function ububbleHtml(m){
+  return userLines(m).map(l => l.act ? '<span class="mut">' + esc(l.text) + "</span>" : esc(l.text)).join("\n");
+}
+function charBubbleHtml(x){
+  const txt = String(x || "");
+  const re = /「[^」]*」/g;
+  const segs = [];
+  let last = 0, mm;
+  while((mm = re.exec(txt))){
+    const before = txt.slice(last, mm.index).trim();
+    if(before) segs.push({ sp: false, x: before });
+    segs.push({ sp: true, x: mm[0] });
+    last = mm.index + mm[0].length;
+  }
+  const tail = txt.slice(last).trim();
+  if(tail) segs.push({ sp: false, x: tail });
+  if(!segs.length) return esc(txt);
+  /* 所作と台詞のあいだは一行あける */
+  return segs.map(s => s.sp ? esc(s.x) : '<span class="mut">' + esc(s.x) + "</span>").join("\n\n");
+}
 function buildMsg(m){
   let wrap;
   if(m.t === "nar"){
@@ -811,7 +877,7 @@ function buildMsg(m){
       head.appendChild(tb);
     }
     const bb = document.createElement("div");
-    bb.className = "cbubble"; bb.textContent = m.x;
+    bb.className = "cbubble"; bb.innerHTML = charBubbleHtml(m.x);
     bb.onclick = () => msgTap(m.id);
     wrap.appendChild(head); wrap.appendChild(bb);
   }else{ /* user */
@@ -820,7 +886,7 @@ function buildMsg(m){
     const nm = document.createElement("span");
     nm.className = "uname"; nm.textContent = USR.name || "";
     const bb = document.createElement("div");
-    bb.className = "ububble"; bb.textContent = m.x;
+    bb.className = "ububble"; bb.innerHTML = ububbleHtml(m);
     bb.onclick = () => msgTap(m.id);
     if(USR.name) wrap.appendChild(nm);
     wrap.appendChild(bb);
@@ -831,29 +897,37 @@ function buildMsg(m){
   else if(openToolsId === m.id) mountTools(wrap, m);
   return wrap;
 }
+function setAnchor(ui){
+  selAnchor = ui;
+  selSet = new Set();
+  if(ui != null){
+    for(let i = ui; i < UNITS.length; i++) for(const id of UNITS[i].ids) selSet.add(id);
+  }
+  for(const el of chatEl.querySelectorAll("[data-id]")){
+    el.classList.toggle("seled", selSet.has(el.dataset.id));
+  }
+  $("selCount").textContent = (ui == null) ? "えらんでね" : "ここから下 " + (UNITS.length - ui) + "まとまり";
+}
 function msgTap(id){
   if(busy) return;
   if(selMode){
-    if(selSet.has(id)) selSet.delete(id); else selSet.add(id);
-    $("selCount").textContent = selSet.size + "件";
-    const el = chatEl.querySelector('[data-id="' + id + '"]');
-    if(el) el.classList.toggle("seled", selSet.has(id));
+    const ui = ID2U[id];
+    setAnchor(selAnchor === ui ? null : ui);
     return;
   }
   toggleTools(id);
 }
 function enterSel(firstId){
   selMode = true;
-  selSet.clear();
-  if(firstId) selSet.add(firstId);
   openToolsId = null; editingId = null;
   $("selBar").classList.add("show");
-  $("selCount").textContent = selSet.size + "件";
   renderChat();
+  setAnchor(firstId != null ? ID2U[firstId] : null);
 }
 function exitSel(){
   selMode = false;
-  selSet.clear();
+  selSet = new Set();
+  selAnchor = null;
   $("selBar").classList.remove("show");
   renderChat();
 }
@@ -977,7 +1051,7 @@ function transcriptText(){
   return items.map(m => {
     if(m.t === "nar") return "【地の文】" + m.x;
     if(m.t === "char") return "【" + cn + "】" + m.x;
-    return "【" + un + (m.act ? "・所作や情景（本人が書いた地の文）" : "") + "】" + m.x;
+    return "【" + un + "】" + userForModel(m);
   }).join("\n\n");
 }
 function buildNarMessages(){
@@ -1020,12 +1094,13 @@ function buildCharMessages(){
   sys += "- （ ）で囲まれた文は、いまその場で起きている情景や出来事です。あなたは実際にそれを見聞きした人物として、自然に受け止めて振る舞ってください。描写の文そのものに言及したり、誰が書いたのかを気にしたりしないでください。\n";
   sys += "- あなたの返事には、台詞と、あなた自身の所作や表情を自由に織り交ぜて構いません。\n";
   sys += "- " + un + "の台詞や行動を、あなたが決めて書かないでください。" + un + "のことは本人だけが決めます。\n";
+  sys += "- 所作のあとに台詞を続けるときは、あいだに空行をはさんでください。\n";
   sys += "- あなたは" + cn + "として、いまこの場にいます。役から出ないでください。\n";
   const msgs = [{ role: "system", content: sys }];
   let buf = [];
   for(const m of CHAT){
     if(m.t === "nar"){ buf.push("（" + m.x + "）"); }
-    else if(m.t === "user"){ buf.push(m.act ? "（" + m.x + "）" : m.x); }
+    else if(m.t === "user"){ buf.push(userForModel(m)); }
     else{ /* char */
       if(buf.length){ msgs.push({ role: "user", content: buf.join("\n\n") }); buf = []; }
       msgs.push({ role: "assistant", content: m.x });
@@ -1113,8 +1188,9 @@ function buildSoloMessages(){
   sys += "- 地の文の行は「≡ 」で始める。" + cn + "の番の行は「＠ 」で始める。\n";
   sys += "- 「≡」と「＠」を短く織り交ぜる。どちらから始めてもよい。1回の出力はブロック" + (STG.blocks || 6) + "つまで。\n";
   sys += "- 「≡」は1段落・3文まで。台詞は書かない。" + cn + "の内心は断定せず、所作・気配・情景として描く。\n";
-  sys += "- 「＠」は" + cn + "の番。台詞でも、短い所作や内心だけでもよい。ひとこと〜数文で。\n";
+  sys += "- 「＠」は" + cn + "の番。台詞でも、短い所作や内心だけでもよい。ひとこと〜数文で。所作のあとに台詞を続けるときは、あいだに空行をはさむ。\n";
   sys += "- " + un + "の台詞・行動・内心は書かない。" + un + "のことは本人だけが決める。\n";
+  sys += "- 【" + un + "】の中の（ ）で囲まれた行は、" + un + "自身が書いた地の文・所作。それ以外の行は" + un + "の台詞。\n";
   sys += "- " + un + "が次に何かを言ったり動いたりできる余地で、かならず筆を止める。" + un + "の反応や返事や許可を想像して、先へ進めない。\n";
   sys += "- マーカーで始まる行のほかは、何も出力しない（前置き・説明・記号の囲みは禁止）。\n";
   const user = (CHAT.length ? "ここまでの舞台:\n\n" + transcriptText() + "\n\n---\n" : "") +
@@ -1315,7 +1391,11 @@ function streamPaint(blocks){
       streamShell(blocks[i].t);
     }
     const v = blocks[i].x.replace(/^\n+/, "");
-    if(streamEls[i]._tx.textContent !== v) streamEls[i]._tx.textContent = v;
+    if(streamEls[i]._v !== v){
+      streamEls[i]._v = v;
+      if(streamEls[i]._t === "char") streamEls[i]._tx.innerHTML = charBubbleHtml(v);
+      else streamEls[i]._tx.textContent = v;
+    }
   }
   if(near) scrollBottom();
 }
@@ -1490,8 +1570,7 @@ async function susumu(){
   openToolsId = null; editingId = null;
   const turn = uid();
   if(text){
-    const act = /^\s*\*/.test(text);
-    CHAT.push({ id: uid(), t: "user", x: text.replace(/^\s*\*\s*/, ""), act: act, turn: turn, ts: Date.now() });
+    CHAT.push({ id: uid(), t: "user", x: text, turn: turn, ts: Date.now() });
     $("astBtn").classList.remove("on");
     field.value = ""; field.style.height = "auto";
     saveChat(); renderChat();
@@ -1742,14 +1821,21 @@ function collectGakuya(){
   NAR.prompt = $("nPrompt").value; NAR.prov = $("nProv").value; NAR.model = $("nModel").value.trim();
   USR.name = $("uName").value.trim(); USR.info = $("uInfo").value;
 }
-function openOmoide(){
-  $("rMemo").value = room.memo || "";
-  $("tanaNew").value = ""; $("flagNew").value = "";
+function openTana(){
+  $("tanaNew").value = "";
   renderTana();
-  renderFlags();
-  $("omoide").classList.add("open");
+  $("tanaSheet").classList.add("open");
 }
-function collectOmoide(){
+function openMemo(){
+  $("rMemo").value = room.memo || "";
+  $("memoSheet").classList.add("open");
+}
+function openFlags(){
+  $("flagNew").value = "";
+  renderFlags();
+  $("flagSheet").classList.add("open");
+}
+function collectMemo(){
   room.memo = $("rMemo").value;
 }
 function openSettei(){
@@ -1776,7 +1862,7 @@ function collectSettei(){
 }
 function collectOpenSheets(){
   if($("gakuya").classList.contains("open")) collectGakuya();
-  if($("omoide").classList.contains("open")) collectOmoide();
+  if($("memoSheet").classList.contains("open")) collectMemo();
   if($("settei").classList.contains("open")) collectSettei();
 }
 function closeSheet(id){
@@ -2081,8 +2167,8 @@ attachModelSearch("nModel", "nList", "nProv");
 $("sendBtn").onclick = () => { if(busy) stopNow(); else { if(selMode) exitSel(); susumu(); } };
 $("selCancel").onclick = exitSel;
 $("selDel").onclick = () => {
-  if(!selSet.size){ exitSel(); return; }
-  if(!confirm(selSet.size + "件をけす？もどせないよ。")) return;
+  if(!selSet.size || selAnchor == null){ exitSel(); return; }
+  if(!confirm("ここから下、" + (UNITS.length - selAnchor) + "まとまりをけす？もどせないよ。")) return;
   CHAT = CHAT.filter(m => !selSet.has(m.id));
   saveChat();
   exitSel();
@@ -2098,7 +2184,9 @@ for(const b of document.querySelectorAll("#menuPop button")){
     $("menuPop").classList.remove("open");
     const go = b.dataset.go;
     if(go === "gakuya") openGakuya();
-    else if(go === "omoide") openOmoide();
+    else if(go === "tana") openTana();
+    else if(go === "memo") openMemo();
+    else if(go === "flags") openFlags();
     else openSettei();
   };
 }
@@ -2178,18 +2266,35 @@ $("flagAdd").onclick = () => {
 $("field").addEventListener("input", function(){
   this.style.height = "auto";
   this.style.height = Math.min(this.scrollHeight, 120) + "px";
-  $("astBtn").classList.toggle("on", /^\s*\*/.test(this.value));
+  updateAstState();
 });
+function curLineStart(f){
+  const pos = f.selectionStart != null ? f.selectionStart : f.value.length;
+  return f.value.lastIndexOf("\n", pos - 1) + 1;
+}
+function updateAstState(){
+  const f = $("field");
+  const ls = curLineStart(f);
+  $("astBtn").classList.toggle("on", f.value.slice(ls).startsWith("*"));
+}
 $("astBtn").onclick = () => {
   const f = $("field");
-  if(/^\s*\*/.test(f.value)){
-    f.value = f.value.replace(/^\s*\*\s*/, "");
+  const ls = curLineStart(f);
+  const pos = f.selectionStart != null ? f.selectionStart : f.value.length;
+  if(f.value.slice(ls).startsWith("*")){
+    f.value = f.value.slice(0, ls) + f.value.slice(ls).replace(/^\*\s*/, "");
+    const np = Math.max(ls, pos - 1);
+    f.setSelectionRange(np, np);
   }else{
-    f.value = "*" + f.value;
+    f.value = f.value.slice(0, ls) + "*" + f.value.slice(ls);
+    f.setSelectionRange(pos + 1, pos + 1);
   }
-  $("astBtn").classList.toggle("on", /^\s*\*/.test(f.value));
+  updateAstState();
   f.focus();
 };
+$("field").addEventListener("click", updateAstState);
+$("field").addEventListener("keyup", updateAstState);
+$("field").addEventListener("focus", updateAstState);
 
 /* 幕開け */
 (async function boot(){
